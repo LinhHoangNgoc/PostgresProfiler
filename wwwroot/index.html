@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PG Monitor - Trace PostgreSQL realtime</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Segoe UI', Tahoma, sans-serif; background: #1e1e2e; color: #e0e0e0; }
+    header { background: #181825; padding: 10px 18px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #313244; }
+    header h1 { font-size: 16px; margin: 0; color: #89b4fa; }
+    .status { font-size: 13px; padding: 3px 10px; border-radius: 12px; }
+    .status.connected { background: #2e4b2e; color: #a6e3a1; }
+    .status.disconnected { background: #4b2e2e; color: #f38ba8; }
+    .status.connecting { background: #4b452e; color: #f9e2af; }
+    .spacer { flex: 1; }
+    button { background: #89b4fa; color: #1e1e2e; border: none; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    button:hover { filter: brightness(1.08); }
+    button.secondary { background: #45475a; color: #e0e0e0; }
+    button.danger { background: #f38ba8; color: #1e1e2e; }
+    button.go { background: #a6e3a1; color: #1e1e2e; }
+    button.small { padding: 4px 9px; font-size: 12px; }
+    input, select { background: #313244; color: #e0e0e0; border: 1px solid #45475a; padding: 7px 9px; border-radius: 6px; }
+
+    #loginScreen { max-width: 340px; margin: 80px auto; background: #181825; padding: 28px; border-radius: 10px; border: 1px solid #313244; }
+    #loginScreen h2 { margin-top: 0; color: #89b4fa; }
+    #loginScreen input { width: 100%; margin-bottom: 12px; }
+    #loginScreen button { width: 100%; }
+    #loginError { color: #f38ba8; font-size: 13px; min-height: 18px; }
+
+    #app { display: none; padding: 0 18px 18px; }
+    .tabs { display: flex; gap: 8px; margin: 14px 0; }
+    .tab { background: #313244; padding: 7px 16px; border-radius: 6px; cursor: pointer; }
+    .tab.active { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
+
+    .bar { background: #181825; border: 1px solid #313244; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .bar label { font-size: 12px; color: #a6adc8; display: flex; align-items: center; gap: 5px; }
+    .trace-state { font-size: 13px; padding: 3px 10px; border-radius: 12px; }
+    .trace-state.on { background: #2e4b2e; color: #a6e3a1; }
+    .trace-state.off { background: #4b2e2e; color: #f38ba8; }
+
+    /* Khối filter gọn: mặc định không có điều kiện, bấm + để thêm */
+    .filterbar { background: #181825; border: 1px solid #313244; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; }
+    .filterbar-head { display: flex; align-items: center; gap: 10px; }
+    .cond { display: flex; align-items: center; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
+    .cond .cond-field { width: 140px; }
+    .cond .cond-op { width: 130px; }
+    .cond .cond-val { flex: 1; min-width: 160px; max-width: 360px; }
+    .cond .cond-del { background: #45475a; color: #f38ba8; }
+
+    .tableWrap { max-height: 48vh; overflow: auto; border: 1px solid #45475a; border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 9px; border: 1px solid #45475a; vertical-align: top; overflow: hidden; }
+    th { position: sticky; top: 0; background: #232334; color: #89b4fa; z-index: 1; }
+    td.query, th.query { white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; }
+    tbody tr { cursor: pointer; }
+    tr.slow td { background: #4b2e2e; color: #f38ba8; }
+    tr.selected td { background: #28406a !important; color: #e0e0e0 !important; }
+    .muted { color: #6c7086; }
+    .count { font-size: 13px; color: #a6adc8; margin: 8px 0; }
+
+    col.c-time { width: 92px; }
+    col.c-pid { width: 58px; }
+    col.c-ip { width: 105px; }
+    col.c-host { width: 105px; }
+    col.c-app { width: 150px; }
+    col.c-user { width: 88px; }
+    col.c-db { width: 96px; }
+    col.c-dur { width: 84px; }
+    col.c-dt { width: 150px; }
+
+    /* Panel chi tiết (richtext) phía dưới */
+    .detailPanel { margin-top: 10px; border: 1px solid #45475a; border-radius: 8px; background: #181825; }
+    .detail-head { padding: 7px 10px; border-bottom: 1px solid #313244; display: flex; align-items: center; gap: 10px; color: #89b4fa; font-size: 13px; }
+    #detailContent { margin: 0; padding: 10px; max-height: 24vh; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5px; color: #cdd6f4; }
+
+    /* Modal xem nội dung to */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50; }
+    .modal-box { background: #1e1e2e; border: 1px solid #45475a; border-radius: 10px; width: min(920px, 92vw); max-height: 85vh; display: flex; flex-direction: column; }
+    .modal-head { padding: 10px 14px; border-bottom: 1px solid #313244; display: flex; justify-content: space-between; align-items: center; color: #89b4fa; }
+    .modal-head button { background: #45475a; color: #e0e0e0; }
+    #modalContent { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 13px; color: #cdd6f4; }
+  </style>
+</head>
+<body>
+  <!-- ===== Đăng nhập ===== -->
+  <div id="loginScreen">
+    <h2>PG Monitor</h2>
+    <p class="muted" style="font-size:13px;margin-top:0">Đăng nhập bằng tài khoản PostgreSQL</p>
+    <input id="username" type="text" placeholder="Username (PostgreSQL)" autocomplete="username" />
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#a6adc8;margin-bottom:12px;cursor:pointer">
+      <input type="checkbox" id="remember" style="width:auto;margin:0" /> Ghi nhớ đăng nhập &amp; tự động đăng nhập
+    </label>
+    <button id="loginBtn">Đăng nhập</button>
+    <div id="loginError"></div>
+  </div>
+
+  <!-- ===== Ứng dụng ===== -->
+  <div id="app">
+    <div class="tabs">
+      <div class="tab active" data-tab="live">Trace realtime</div>
+      <div class="tab" data-tab="history">Lịch sử query chậm</div>
+    </div>
+
+    <!-- Panel Trace -->
+    <div id="livePanel">
+      <div class="bar">
+        <button class="go" id="startTrace">▶ Bắt đầu trace</button>
+        <button class="danger" id="stopTrace">■ Dừng trace</button>
+        <span id="traceState" class="trace-state off">Trace: tắt</span>
+        <label>Ngưỡng log ≥ <input type="number" id="thresholdMs" min="0" step="50" value="0" style="width:90px" /> ms <span class="muted">(0 = mọi câu lệnh)</span></label>
+        <div class="spacer"></div>
+        <label class="toggle" style="color:#e0e0e0"><input type="checkbox" id="pauseView" /> Tạm dừng màn hình</label>
+        <button class="secondary" id="clearGrid">Xoá màn hình</button>
+      </div>
+
+      <!-- Khối filter động, gọn -->
+      <div class="filterbar">
+        <div class="filterbar-head">
+          <button class="small" id="addCond">＋ Thêm điều kiện lọc</button>
+          <span class="muted" style="font-size:12px">Không có điều kiện = hiện tất cả. Nhiều điều kiện = phải khớp tất cả.</span>
+          <div class="spacer"></div>
+          <button class="secondary small" id="clearConds">Xoá lọc</button>
+        </div>
+        <div id="condList"></div>
+      </div>
+
+      <div class="count" id="liveCount"></div>
+      <div class="tableWrap">
+        <table>
+          <colgroup>
+            <col class="c-time"><col class="c-pid"><col class="c-ip"><col class="c-host"><col class="c-app"><col class="c-user"><col class="c-db"><col class="c-dur"><col>
+          </colgroup>
+          <thead>
+            <tr><th>Thời gian</th><th>PID</th><th>IP máy con</th><th>Tên máy</th><th>Phần mềm</th><th>User</th><th>Database</th><th>Duration (ms)</th><th class="query">Query</th></tr>
+          </thead>
+          <tbody id="liveBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Panel chi tiết richtext -->
+      <div class="detailPanel">
+        <div class="detail-head">
+          <span>Chi tiết</span>
+          <span id="detailInfo" class="muted" style="font-size:12px"></span>
+          <span class="muted" style="font-size:12px">— click: 1 dòng · Ctrl+click: nhiều dòng · double-click: xem to</span>
+          <div class="spacer"></div>
+          <button class="secondary small" id="copyDetail">Copy</button>
+        </div>
+        <pre id="detailContent"></pre>
+      </div>
+    </div>
+
+    <!-- Panel History -->
+    <div id="historyPanel" style="display:none">
+      <div class="bar">
+        <label>Min duration (s) <input type="number" id="hMinDur" min="0" step="0.5" value="1" style="width:90px" /></label>
+        <label>Limit <input type="number" id="hLimit" min="1" max="500" value="50" style="width:80px" /></label>
+        <button id="reloadHistory">Tải lịch sử</button>
+      </div>
+      <div class="count" id="historyCount"></div>
+      <div class="tableWrap" style="max-height:66vh">
+        <table>
+          <colgroup>
+            <col class="c-pid"><col class="c-user"><col class="c-db"><col class="c-dt"><col class="c-dt"><col class="c-dur"><col>
+          </colgroup>
+          <thead>
+            <tr><th>PID</th><th>User</th><th>Database</th><th>Bắt đầu</th><th>Kết thúc</th><th>Duration (s)</th><th class="query">Query</th></tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal-box">
+      <div class="modal-head"><span id="modalTitle">Nội dung câu lệnh</span><button id="modalClose">Đóng ✕</button></div>
+      <pre id="modalContent"></pre>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+  <script>
+    let token = null;
+    let connection = null;
+    let events = [];                 // trace event (mới nhất ở đầu), tối đa MAX
+    let seq = 0;                     // id tăng dần cho mỗi event (để chọn dòng)
+    const selectedIds = new Set();   // các dòng đang chọn
+    const MAX = 1000;
+    const SLOW_MS = 5000;
+    const $ = id => document.getElementById(id);
+
+    // ---------- Đăng nhập ----------
+    async function login() {
+      const username = $('username').value.trim();
+      const password = $('password').value;
+      $('loginError').textContent = '';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) {
+          // Sai thông tin -> xoá cred đã lưu để không auto-login lặp lại.
+          if (res.status === 401) localStorage.removeItem('pgmon_cred');
+          $('loginError').textContent = res.status === 401
+            ? 'Sai username hoặc password PostgreSQL.' : 'Đăng nhập lỗi (' + res.status + ').';
+          return;
+        }
+        token = (await res.json()).token;
+        // Ghi nhớ / xoá đăng nhập theo lựa chọn.
+        if ($('remember').checked)
+          localStorage.setItem('pgmon_cred', JSON.stringify({ username, password }));
+        else
+          localStorage.removeItem('pgmon_cred');
+        $('loginScreen').style.display = 'none';
+        $('app').style.display = 'block';
+        buildHeader();
+        startSignalR();
+        refreshTraceStatus();
+      } catch { $('loginError').textContent = 'Không kết nối được máy chủ.'; }
+    }
+    $('loginBtn').addEventListener('click', login);
+    $('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+    // Tự động đăng nhập nếu đã ghi nhớ.
+    (function autoLogin() {
+      try {
+        const raw = localStorage.getItem('pgmon_cred');
+        if (!raw) return;
+        const c = JSON.parse(raw);
+        $('username').value = c.username || '';
+        $('password').value = c.password || '';
+        $('remember').checked = true;
+        login();
+      } catch {}
+    })();
+
+    // ---------- Header ----------
+    function buildHeader() {
+      const h = document.createElement('header');
+      h.innerHTML = `<h1>PG Monitor</h1>
+        <span id="connStatus" class="status connecting">Đang kết nối...</span>
+        <div class="spacer"></div>
+        <button class="secondary" id="logoutBtn">Đăng xuất</button>`;
+      document.body.insertBefore(h, document.body.firstChild);
+      // Đăng xuất: xoá cred đã ghi nhớ để không tự đăng nhập lại.
+      $('logoutBtn').addEventListener('click', () => { localStorage.removeItem('pgmon_cred'); location.reload(); });
+    }
+    function setStatus(state, text) {
+      const el = $('connStatus'); if (!el) return;
+      el.className = 'status ' + state; el.textContent = text;
+    }
+
+    // ---------- SignalR ----------
+    function startSignalR() {
+      connection = new signalR.HubConnectionBuilder()
+        .withUrl('/hubs/monitor', { accessTokenFactory: () => token })
+        .withAutomaticReconnect().build();
+
+      connection.on('TraceEvents', evs => {
+        if ($('pauseView').checked) return;
+        if (!evs || !evs.length) return;
+        for (const e of evs) { e._id = ++seq; events.unshift(e); }
+        if (events.length > MAX) events.length = MAX;
+        renderLive();
+      });
+
+      connection.onreconnecting(() => setStatus('connecting', 'Đang kết nối lại...'));
+      connection.onreconnected(() => setStatus('connected', 'Đã kết nối'));
+      connection.onclose(() => setStatus('disconnected', 'Mất kết nối'));
+      connection.start()
+        .then(() => setStatus('connected', 'Đã kết nối'))
+        .catch(err => { setStatus('disconnected', 'Lỗi kết nối'); console.error(err); });
+    }
+
+    // ---------- Điều khiển trace ----------
+    async function traceCall(path) {
+      return fetch(path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+    }
+    $('startTrace').addEventListener('click', async () => {
+      const ms = parseInt($('thresholdMs').value) || 0;
+      const res = await traceCall('/api/trace/start?thresholdMs=' + ms);
+      if (res.ok) setTraceState(true, ms);
+    });
+    $('stopTrace').addEventListener('click', async () => {
+      const res = await traceCall('/api/trace/stop');
+      if (res.ok) setTraceState(false);
+    });
+    async function refreshTraceStatus() {
+      try {
+        const res = await fetch('/api/trace/status', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (res.ok) { const s = await res.json(); setTraceState(s.running, s.thresholdMs); }
+      } catch {}
+    }
+    function setTraceState(on, ms) {
+      const el = $('traceState');
+      el.className = 'trace-state ' + (on ? 'on' : 'off');
+      el.textContent = on ? `Trace: bật (≥ ${ms}ms)` : 'Trace: tắt';
+      if (on && ms >= 0) $('thresholdMs').value = ms;
+    }
+
+    // ---------- Filter động ----------
+    // Định nghĩa các loại trường + kiểu điều kiện
+    const FIELDS = [
+      { key: 'query',      label: 'Query',         type: 'text' },
+      { key: 'client',     label: 'IP máy con',    type: 'text' },
+      { key: 'clientHost', label: 'Tên máy',       type: 'text' },
+      { key: 'application',label: 'Phần mềm',      type: 'text' },
+      { key: 'user',       label: 'Username',      type: 'text' },
+      { key: 'database',   label: 'Database',      type: 'text' },
+      { key: 'pid',        label: 'PID',           type: 'num'  },
+      { key: 'durationMs', label: 'Duration (ms)', type: 'num'  },
+    ];
+    const OPS = {
+      text: [ { key: 'contains', label: 'Chứa' }, { key: 'notcontains', label: 'Không chứa' } ],
+      num:  [ { key: 'gte', label: '≥' }, { key: 'lte', label: '≤' }, { key: 'eq', label: '=' } ],
+    };
+    const conds = []; // [{field, op, value}]
+
+    function fieldType(key) { return (FIELDS.find(f => f.key === key) || {}).type || 'text'; }
+
+    function addCondition() {
+      const cond = { field: 'query', op: 'contains', value: '' };
+      conds.push(cond);
+      const row = document.createElement('div');
+      row.className = 'cond';
+
+      const selField = document.createElement('select');
+      selField.className = 'cond-field';
+      selField.innerHTML = FIELDS.map(f => `<option value="${f.key}">${f.label}</option>`).join('');
+
+      const selOp = document.createElement('select');
+      selOp.className = 'cond-op';
+
+      const inpVal = document.createElement('input');
+      inpVal.className = 'cond-val';
+      inpVal.placeholder = 'giá trị...';
+
+      const del = document.createElement('button');
+      del.className = 'cond-del small';
+      del.textContent = '✕';
+
+      function fillOps() {
+        const t = fieldType(cond.field);
+        selOp.innerHTML = OPS[t].map(o => `<option value="${o.key}">${o.label}</option>`).join('');
+        cond.op = OPS[t][0].key;
+        inpVal.type = t === 'num' ? 'number' : 'text';
+      }
+      fillOps();
+
+      selField.addEventListener('change', () => { cond.field = selField.value; fillOps(); renderLive(); });
+      selOp.addEventListener('change', () => { cond.op = selOp.value; renderLive(); });
+      inpVal.addEventListener('input', () => { cond.value = inpVal.value; renderLive(); });
+      del.addEventListener('click', () => {
+        const i = conds.indexOf(cond);
+        if (i >= 0) conds.splice(i, 1);
+        row.remove(); renderLive();
+      });
+
+      row.append(selField, selOp, inpVal, del);
+      $('condList').appendChild(row);
+    }
+    $('addCond').addEventListener('click', addCondition);
+    $('clearConds').addEventListener('click', () => { conds.length = 0; $('condList').innerHTML = ''; renderLive(); });
+
+    function evalCond(r, c) {
+      const t = fieldType(c.field);
+      if (t === 'text') {
+        const v = (r[c.field] ?? '').toString().toLowerCase();
+        const val = (c.value ?? '').toLowerCase();
+        if (!val) return true;
+        return c.op === 'contains' ? v.includes(val) : !v.includes(val);
+      } else {
+        if (c.value === '' || c.value == null) return true;
+        const v = Number(r[c.field] ?? 0), val = Number(c.value);
+        if (isNaN(val)) return true;
+        if (c.op === 'gte') return v >= val;
+        if (c.op === 'lte') return v <= val;
+        return v === val;
+      }
+    }
+    function applyFilters(rows) {
+      if (!conds.length) return rows;
+      return rows.filter(r => conds.every(c => evalCond(r, c)));
+    }
+
+    // ---------- Render grid ----------
+    function esc(s) {
+      return (s ?? '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function fmtTime(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return isNaN(d) ? iso : d.toLocaleTimeString('vi-VN', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3,'0');
+    }
+    function renderLive() {
+      const rows = applyFilters(events);
+      $('liveBody').innerHTML = rows.map(r => {
+        const cls = [];
+        if ((r.durationMs ?? 0) > SLOW_MS) cls.push('slow');
+        if (selectedIds.has(r._id)) cls.push('selected');
+        return `<tr data-id="${r._id}"${cls.length ? ` class="${cls.join(' ')}"` : ''}>
+          <td>${esc(fmtTime(r.time))}</td>
+          <td>${esc(r.pid)}</td>
+          <td>${esc(r.client)}</td>
+          <td>${esc(r.clientHost)}</td>
+          <td>${esc(r.application)}</td>
+          <td>${esc(r.user)}</td>
+          <td>${esc(r.database)}</td>
+          <td>${(r.durationMs ?? 0).toFixed(2)}</td>
+          <td class="query">${esc(r.query)}</td>
+        </tr>`;
+      }).join('');
+      $('liveCount').textContent = conds.length
+        ? `Hiển thị ${rows.length}/${events.length} dòng (đang lọc)`
+        : `${events.length} dòng trace (mới nhất ở trên)`;
+    }
+
+    // ---------- Chọn dòng + chi tiết ----------
+    $('liveBody').addEventListener('click', e => {
+      const tr = e.target.closest('tr'); if (!tr) return;
+      const id = Number(tr.dataset.id);
+      if (e.ctrlKey || e.metaKey) {
+        selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
+      } else {
+        selectedIds.clear(); selectedIds.add(id);
+      }
+      updateDetail();
+      // cập nhật highlight ngay mà không cần chờ batch tiếp theo
+      $('liveBody').querySelectorAll('tr').forEach(row =>
+        row.classList.toggle('selected', selectedIds.has(Number(row.dataset.id))));
+    });
+    $('liveBody').addEventListener('dblclick', e => {
+      const tr = e.target.closest('tr'); if (!tr) return;
+      const ev = events.find(x => x._id === Number(tr.dataset.id));
+      if (ev) openModal(ev);
+    });
+
+    function detailText(ev) {
+      const may = [ev.client, ev.clientHost, ev.application].filter(Boolean).join(' · ');
+      const header = `-- PID ${ev.pid} | ${ev.user}@${ev.database}${may ? ' | ' + may : ''} | ${(ev.durationMs ?? 0).toFixed(2)} ms | ${fmtTime(ev.time)}`;
+      return header + '\n' + (ev.query || '');
+    }
+    function updateDetail() {
+      // giữ đúng thứ tự hiển thị (mới nhất ở trên)
+      const sel = events.filter(e => selectedIds.has(e._id));
+      if (!sel.length) { $('detailContent').textContent = ''; $('detailInfo').textContent = ''; return; }
+      $('detailInfo').textContent = sel.length === 1 ? '1 dòng' : `${sel.length} dòng (ghép)`;
+      $('detailContent').textContent = sel.map(detailText).join('\n\n');
+    }
+    $('copyDetail').addEventListener('click', () => {
+      const t = $('detailContent').textContent;
+      if (t) navigator.clipboard?.writeText(t);
+    });
+
+    // ---------- Modal ----------
+    function openModal(ev) {
+      $('modalTitle').textContent = `PID ${ev.pid} · ${ev.user}@${ev.database} · ${(ev.durationMs ?? 0).toFixed(2)} ms · ${fmtTime(ev.time)}`;
+      $('modalContent').textContent = ev.query || '';
+      $('modal').style.display = 'flex';
+    }
+    function closeModal() { $('modal').style.display = 'none'; }
+    $('modalClose').addEventListener('click', closeModal);
+    $('modal').addEventListener('click', e => { if (e.target === $('modal')) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+    $('clearGrid').addEventListener('click', () => { events = []; selectedIds.clear(); updateDetail(); renderLive(); });
+
+    // ---------- Tabs ----------
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const isLive = tab.dataset.tab === 'live';
+        $('livePanel').style.display = isLive ? 'block' : 'none';
+        $('historyPanel').style.display = isLive ? 'none' : 'block';
+        if (!isLive) loadHistory();
+      });
+    });
+
+    // ---------- Lịch sử ----------
+    async function loadHistory() {
+      const min = parseFloat($('hMinDur').value) || 0;
+      const limit = parseInt($('hLimit').value) || 50;
+      try {
+        const res = await fetch(`/api/history?minDuration=${min}&limit=${limit}`, {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!res.ok) { $('historyCount').textContent = 'Lỗi tải lịch sử (' + res.status + ')'; return; }
+        const items = await res.json();
+        $('historyBody').innerHTML = items.map(r => `
+          <tr>
+            <td>${esc(r.pid)}</td>
+            <td>${esc(r.userName)}</td>
+            <td>${esc(r.database)}</td>
+            <td>${esc(fmtDt(r.queryStart))}</td>
+            <td>${esc(fmtDt(r.queryEnd))}</td>
+            <td>${(r.durationSeconds ?? 0).toFixed(2)}</td>
+            <td class="query">${esc(r.queryText)}</td>
+          </tr>`).join('');
+        $('historyCount').textContent = `${items.length} bản ghi`;
+      } catch { $('historyCount').textContent = 'Không kết nối được máy chủ.'; }
+    }
+    function fmtDt(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return isNaN(d) ? iso : d.toLocaleString('vi-VN');
+    }
+    $('reloadHistory').addEventListener('click', loadHistory);
+    // Double-click 1 dòng lịch sử cũng mở modal
+    $('historyBody').addEventListener('dblclick', e => {
+      const tr = e.target.closest('tr'); if (!tr) return;
+      const q = tr.querySelector('td.query')?.textContent || '';
+      $('modalTitle').textContent = 'Nội dung câu lệnh (lịch sử)';
+      $('modalContent').textContent = q;
+      $('modal').style.display = 'flex';
+    });
+  </script>
+</body>
+</html>

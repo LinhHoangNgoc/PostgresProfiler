@@ -1,0 +1,16 @@
+# Build output
+bin/
+obj/
+
+# Secrets thật (không đẩy lên git) — chứa password PostgreSQL & JWT key thật
+appsettings.Production.json
+appsettings.*.Local.json
+appsettings.Local.json
+
+# SQLite lịch sử
+*.db
+*.db-shm
+*.db-wal
+
+# Linux
+*.log

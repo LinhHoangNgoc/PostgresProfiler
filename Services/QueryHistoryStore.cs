@@ -1,0 +1,111 @@
+using Microsoft.Data.Sqlite;
+using PgMonitorApi.Models;
+
+namespace PgMonitorApi.Services;
+
+/// <summary>
+/// Lưu và truy vấn lịch sử query chậm trong file SQLite cục bộ (query_history.db).
+/// Đăng ký dạng singleton; các thao tác ghi được khoá để an toàn khi đa luồng.
+/// </summary>
+public class QueryHistoryStore
+{
+    private readonly string _connectionString;
+    private readonly object _writeLock = new();
+    private readonly ILogger<QueryHistoryStore> _logger;
+
+    public QueryHistoryStore(IConfiguration config, ILogger<QueryHistoryStore> logger)
+    {
+        _logger = logger;
+        // File DB đặt cạnh thư mục chạy ứng dụng.
+        var dbPath = config["History:DatabasePath"] ?? "query_history.db";
+        _connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath
+        }.ToString();
+
+        Initialize();
+    }
+
+    /// <summary>Tạo bảng nếu chưa tồn tại.</summary>
+    private void Initialize()
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            CREATE TABLE IF NOT EXISTS QueryHistory (
+                Id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                Pid             INTEGER,
+                UserName        TEXT,
+                Database        TEXT,
+                Client          TEXT,
+                QueryStart      TEXT,
+                QueryEnd        TEXT,
+                DurationSeconds REAL,
+                QueryText       TEXT
+            );
+            CREATE INDEX IF NOT EXISTS IX_QueryHistory_Duration ON QueryHistory(DurationSeconds);";
+        cmd.ExecuteNonQuery();
+        _logger.LogInformation("SQLite history store sẵn sàng tại {Conn}", _connectionString);
+    }
+
+    /// <summary>Ghi một query đã kết thúc vào lịch sử.</summary>
+    public void Insert(QueryHistoryEntry entry)
+    {
+        lock (_writeLock)
+        {
+            using var conn = new SqliteConnection(_connectionString);
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO QueryHistory
+                    (Pid, UserName, Database, Client, QueryStart, QueryEnd, DurationSeconds, QueryText)
+                VALUES
+                    ($pid, $user, $db, $client, $start, $end, $dur, $text);";
+            cmd.Parameters.AddWithValue("$pid", entry.Pid);
+            cmd.Parameters.AddWithValue("$user", (object?)entry.UserName ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$db", (object?)entry.Database ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$client", (object?)entry.Client ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$start", (object?)entry.QueryStart?.ToString("o") ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$end", entry.QueryEnd.ToString("o"));
+            cmd.Parameters.AddWithValue("$dur", entry.DurationSeconds);
+            cmd.Parameters.AddWithValue("$text", (object?)entry.QueryText ?? DBNull.Value);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Lấy các query chậm đã lưu, sắp xếp theo duration giảm dần.</summary>
+    public List<QueryHistoryEntry> Query(double minDuration, int limit)
+    {
+        var result = new List<QueryHistoryEntry>();
+        using var conn = new SqliteConnection(_connectionString);
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            SELECT Id, Pid, UserName, Database, Client, QueryStart, QueryEnd, DurationSeconds, QueryText
+            FROM QueryHistory
+            WHERE DurationSeconds >= $minDur
+            ORDER BY DurationSeconds DESC
+            LIMIT $limit;";
+        cmd.Parameters.AddWithValue("$minDur", minDuration);
+        cmd.Parameters.AddWithValue("$limit", limit);
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add(new QueryHistoryEntry
+            {
+                Id = reader.GetInt64(0),
+                Pid = reader.GetInt32(1),
+                UserName = reader.IsDBNull(2) ? null : reader.GetString(2),
+                Database = reader.IsDBNull(3) ? null : reader.GetString(3),
+                Client = reader.IsDBNull(4) ? null : reader.GetString(4),
+                QueryStart = reader.IsDBNull(5) ? null : DateTime.Parse(reader.GetString(5)),
+                QueryEnd = DateTime.Parse(reader.GetString(6)),
+                DurationSeconds = reader.GetDouble(7),
+                QueryText = reader.IsDBNull(8) ? null : reader.GetString(8)
+            });
+        }
+        return result;
+    }
+}

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PgMonitorApi</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Kết nối PostgreSQL -->
+    <PackageReference Include="Npgsql" Version="8.0.5" />
+    <!-- Lưu lịch sử query chậm vào SQLite cục bộ -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.10" />
+    <!-- Xác thực JWT Bearer -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.10" />
+  </ItemGroup>
+
+</Project>
