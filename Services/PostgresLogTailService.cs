@@ -23,11 +23,12 @@ public partial class PostgresLogTailService : BackgroundService
     private readonly double _minDurationToLogSeconds;
 
     // Nhận diện dòng bắt đầu một bản ghi log: "2026-07-10 23:17:10.799 +07 [12345] "
-    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2,4} \[\d+\] ")]
+    // Timezone chấp nhận cả dạng offset (+07) lẫn tên (ICT, UTC...) để hợp PG trên Windows.
+    [GeneratedRegex(@"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} (?:[+-]\d{2,4}|[A-Za-z]{2,5}) \[\d+\] ")]
     private static partial Regex StartLineRegex();
 
     // Tách toàn bộ một bản ghi (có thể nhiều dòng) thành các thành phần.
-    [GeneratedRegex(@"^(?<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2,4}) \[(?<pid>\d+)\] (?:(?<user>[^@\s]+)@(?<db>\S+) )?(?<sev>[A-Z]+):\s{1,2}(?<msg>.*)$",
+    [GeneratedRegex(@"^(?<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} (?:[+-]\d{2,4}|[A-Za-z]{2,5})) \[(?<pid>\d+)\] (?:(?<user>[^@\s]+)@(?<db>\S+) )?(?<sev>[A-Z]+):\s{1,2}(?<msg>.*)$",
         RegexOptions.Singleline)]
     private static partial Regex EntryRegex();
 

@@ -1,6 +1,7 @@
 # Build output
 bin/
 obj/
+dist/
 
 # Secrets thật (không đẩy lên git) — chứa password PostgreSQL & JWT key thật
 appsettings.Production.json
