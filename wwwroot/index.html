@@ -75,7 +75,8 @@
     .th-filter.active svg { filter: drop-shadow(0 0 2px #f9e2af88); }
     .resizer { position: absolute; right: 0; top: 0; width: 7px; height: 100%; cursor: col-resize; }
     .resizer:hover { background: #89b4fa55; }
-    td.query { white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; }
+    /* Query trong grid: 1 dòng, cắt bớt (xem đầy đủ ở richtext dưới hoặc double-click) */
+    td.query { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; }
     tbody tr { cursor: pointer; }
     tr.slow td { background: var(--slow); color: var(--slow-fg); }
     tr.err td { background: var(--err); color: var(--err-fg); }
@@ -199,7 +200,7 @@
 
   <div class="modal-overlay" id="modal">
     <div class="modal-box">
-      <div class="modal-head"><span id="modalTitle">Nội dung câu lệnh</span><button id="modalClose">Đóng ✕</button></div>
+      <div class="modal-head"><span id="modalTitle">Nội dung câu lệnh</span><span><button class="small" id="modalCopy" style="margin-right:6px">Copy</button><button id="modalClose">Đóng ✕</button></span></div>
       <div id="modalErr" style="display:none"></div>
       <pre id="modalContent"></pre>
     </div>
@@ -398,6 +399,7 @@
     }
     function closeModal() { $('modal').style.display = 'none'; }
     $('modalClose').addEventListener('click', closeModal);
+    $('modalCopy').addEventListener('click', () => { const t = $('modalContent').innerText; if (t) navigator.clipboard?.writeText(t); });
     $('modal').addEventListener('click', e => { if (e.target === $('modal')) closeModal(); });
 
     // ===== Splitter =====

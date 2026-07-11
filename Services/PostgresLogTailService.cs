@@ -201,7 +201,10 @@ public partial class PostgresLogTailService : BackgroundService
     private void Emit(List<TraceEvent> batch, DateTimeOffset ts, int pid, string? user, string? db,
                       string kind, string sql, double ms, string? error)
     {
+        // Bỏ qua query nội bộ của chính app monitor (đánh dấu /*pgmon*/ hoặc app_name PgMonitorApi).
+        if (sql.Contains("/*pgmon*/")) return;
         var info = _clientInfo.Get(pid);
+        if (info?.Application == "PgMonitorApi") return;
         string? ip = info?.Ip;
 
         var ev = new TraceEvent

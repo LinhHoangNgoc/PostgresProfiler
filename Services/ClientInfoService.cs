@@ -67,7 +67,8 @@ public class ClientInfoService : BackgroundService
 
     private async Task RefreshAsync(CancellationToken ct)
     {
-        const string sql = @"SELECT pid, client_addr, application_name
+        // Đánh dấu /*pgmon*/ để log-tail loại query nội bộ của chính app khỏi trace.
+        const string sql = @"/*pgmon*/ SELECT pid, client_addr, application_name
                              FROM pg_stat_activity
                              WHERE client_addr IS NOT NULL;";
         await using var conn = new NpgsqlConnection(_conn);
@@ -102,7 +103,7 @@ public class ClientInfoService : BackgroundService
         {
             await using var conn = new NpgsqlConnection(_machineNameConn);
             await conn.OpenAsync(ct);
-            await using var cmd = new NpgsqlCommand(_machineNameSql, conn);
+            await using var cmd = new NpgsqlCommand("/*pgmon*/ " + _machineNameSql, conn);
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -118,46 +119,74 @@ public class ClientInfoService : BackgroundService
         }
     }
 
+    private string? _gateway;
+
     /// <summary>
-    /// Phân giải IP -> tên máy con (best-effort, cache lại kể cả khi thất bại):
-    /// 1) reverse-DNS; 2) nếu không ra thì NetBIOS qua nmblookup (mạng Windows LAN).
+    /// Phân giải IP -> tên máy con (best-effort, cache lại kể cả khi thất bại). Thử nhiều cách:
+    /// 1) DNS ngược qua router (dig @gateway) — bắt được máy DHCP; 2) DNS ngược mặc định;
+    /// 3) NetBIOS (nmblookup); 4) mDNS (avahi-resolve). Trả tên ngắn (bỏ domain).
     /// </summary>
     private async Task EnsureHostAsync(string ip)
     {
         if (_hostByIp.TryGetValue(ip, out var cached) && DateTime.UtcNow - cached.Ts < HostTtl)
             return;
 
-        string? host = await ReverseDnsAsync(ip) ?? await NetBiosAsync(ip);
-        _hostByIp[ip] = (host, DateTime.UtcNow);
+        string? host = await DigAsync(ip) ?? await NetBiosAsync(ip) ?? await AvahiAsync(ip);
+        _hostByIp[ip] = (Short(host), DateTime.UtcNow);
     }
 
-    /// <summary>Reverse-DNS (thường trống trên LAN vì không có bản ghi PTR).</summary>
-    private static async Task<string?> ReverseDnsAsync(string ip)
+    // Lấy tên ngắn (bỏ domain .lan/.local...) và loại nếu trùng IP.
+    private static string? Short(string? name)
     {
-        try
-        {
-            var lookup = Dns.GetHostEntryAsync(ip);
-            if (await Task.WhenAny(lookup, Task.Delay(400)) == lookup)
-            {
-                var name = lookup.Result.HostName;
-                if (!string.IsNullOrWhiteSpace(name) && name != ip)
-                    return name.Split('.')[0];
-            }
-        }
-        catch { }
-        return null;
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        name = name.Trim().TrimEnd('.');
+        if (System.Net.IPAddress.TryParse(name, out _)) return null;
+        return name.Split('.')[0];
     }
 
-    // Bắt tên máy (unique <00>, không phải <GROUP>) từ output của nmblookup -A.
-    private static readonly Regex NmbNameRegex =
-        new(@"^\s*(\S+)\s+<00>\s+-\s+(?!<GROUP>)", RegexOptions.Multiline);
+    /// <summary>DNS ngược: hỏi router (gateway) trước, rồi resolver mặc định.</summary>
+    private async Task<string?> DigAsync(string ip)
+    {
+        _gateway ??= await DetectGatewayAsync() ?? "";
+        if (!string.IsNullOrEmpty(_gateway))
+        {
+            var viaGw = await RunAsync("dig", $"+short +time=1 +tries=1 -x {ip} @{_gateway}", 1500);
+            var name = viaGw?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+            if (!string.IsNullOrWhiteSpace(name)) return name;
+        }
+        var def = await RunAsync("dig", $"+short +time=1 +tries=1 -x {ip}", 1500);
+        return def?.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+    }
 
-    /// <summary>Tra tên máy Windows qua NetBIOS: nmblookup -A ip.</summary>
+    private async Task<string?> DetectGatewayAsync()
+    {
+        var route = await RunAsync("ip", "route", 1000);
+        var m = Regex.Match(route ?? "", @"default via (\S+)");
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    private static readonly Regex NmbNameRegex = new(@"^\s*(\S+)\s+<00>\s+-\s+(?!<GROUP>)", RegexOptions.Multiline);
     private async Task<string?> NetBiosAsync(string ip)
     {
+        var output = await RunAsync("nmblookup", $"-A {ip}", 1500);
+        var m = NmbNameRegex.Match(output ?? "");
+        return m.Success ? m.Groups[1].Value.Trim() : null;
+    }
+
+    private async Task<string?> AvahiAsync(string ip)
+    {
+        // Output: "192.168.1.69\tMrLinhMint.local"
+        var output = await RunAsync("avahi-resolve", $"-a {ip}", 1500);
+        var parts = output?.Trim().Split('\t');
+        return parts is { Length: >= 2 } ? parts[1].Trim() : null;
+    }
+
+    /// <summary>Chạy một tiến trình, đọc stdout, có timeout; trả null nếu lỗi/hết giờ.</summary>
+    private async Task<string?> RunAsync(string file, string args, int timeoutMs)
+    {
         try
         {
-            var psi = new ProcessStartInfo("nmblookup", $"-A {ip}")
+            var psi = new ProcessStartInfo(file, args)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -166,20 +195,17 @@ public class ClientInfoService : BackgroundService
             };
             using var proc = Process.Start(psi);
             if (proc == null) return null;
-
-            var outputTask = proc.StandardOutput.ReadToEndAsync();
-            if (await Task.WhenAny(outputTask, Task.Delay(1500)) != outputTask)
+            var outTask = proc.StandardOutput.ReadToEndAsync();
+            if (await Task.WhenAny(outTask, Task.Delay(timeoutMs)) != outTask)
             {
                 try { proc.Kill(true); } catch { }
                 return null;
             }
-            var output = await outputTask;
-            var m = NmbNameRegex.Match(output);
-            return m.Success ? m.Groups[1].Value.Trim() : null;
+            return await outTask;
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "nmblookup lỗi cho {Ip}", ip);
+            _logger.LogDebug(ex, "Lỗi chạy {File} {Args}", file, args);
             return null;
         }
     }

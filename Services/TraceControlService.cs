@@ -42,7 +42,7 @@ public class TraceControlService
     {
         await using var conn = new NpgsqlConnection(_adminConn);
         await conn.OpenAsync(ct);
-        await using var cmd = new NpgsqlCommand("SHOW log_min_duration_statement", conn);
+        await using var cmd = new NpgsqlCommand("/*pgmon*/ SHOW log_min_duration_statement", conn);
         var val = (string?)await cmd.ExecuteScalarAsync(ct);
         // Giá trị có thể là "-1", "0", "1s", "250ms"... chuẩn hoá về ms đơn giản.
         if (string.IsNullOrWhiteSpace(val)) return -1;
@@ -57,7 +57,7 @@ public class TraceControlService
     {
         await using var conn = new NpgsqlConnection(_adminConn);
         await conn.OpenAsync(ct);
-        await using var cmd = new NpgsqlCommand(sql, conn);
+        await using var cmd = new NpgsqlCommand("/*pgmon*/ " + sql, conn);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 }
