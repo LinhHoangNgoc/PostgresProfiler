@@ -247,6 +247,7 @@
       { key: 'user', label: 'User', width: 90, type: 'text' },
       { key: 'database', label: 'Database', width: 100, type: 'text' },
       { key: 'durationMs', label: 'Duration (ms)', width: 100, type: 'num' },
+      { key: 'status', label: 'Trạng thái', width: 84, type: 'text' },
       { key: 'query', label: 'Query', width: 520, type: 'text' },
     ];
     const OPS = { text: [{ key: 'contains', label: 'Chứa (Like)' }, { key: 'notcontains', label: 'Không chứa (Not Like)' }], num: [{ key: 'gte', label: '≥' }, { key: 'lte', label: '≤' }, { key: 'eq', label: '=' }], time: [{ key: 'contains', label: 'Chứa (Like)' }, { key: 'notcontains', label: 'Không chứa (Not Like)' }] };
@@ -256,7 +257,7 @@
       try { const s = JSON.parse(localStorage.getItem(LS_KEY));
         if (Array.isArray(s) && s.length) { const map = Object.fromEntries(DEFAULT_COLUMNS.map(c => [c.key, c]));
           const cols = s.filter(x => map[x.key]).map(x => ({ ...map[x.key], width: x.width || map[x.key].width, filter: x.filter || null }));
-          for (const d of DEFAULT_COLUMNS) if (!cols.find(c => c.key === d.key)) cols.push({ ...d }); return cols; }
+          DEFAULT_COLUMNS.forEach((d, idx) => { if (!cols.find(c => c.key === d.key)) cols.splice(Math.min(idx, cols.length), 0, { ...d }); }); return cols; }
       } catch {} return DEFAULT_COLUMNS.map(c => ({ ...c }));
     }
     function saveLayout() { localStorage.setItem(LS_KEY, JSON.stringify(columns.map(c => ({ key: c.key, width: c.width, filter: c.filter || null })))); }
@@ -303,7 +304,12 @@
 
     // ===== Ô / lọc =====
     function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleTimeString('vi-VN', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0'); }
-    function cellText(r, col) { if (col.key === 'time') return fmtTime(r.time); if (col.key === 'durationMs') return r.error ? 'lỗi' : (r.durationMs ?? 0).toFixed(2); return r[col.key]; }
+    function cellText(r, col) {
+      if (col.key === 'time') return fmtTime(r.time);
+      if (col.key === 'durationMs') return r.error ? 'lỗi' : (r.durationMs ?? 0).toFixed(2);
+      if (col.key === 'status') return r.error ? 'Lỗi' : 'OK';
+      return r[col.key];
+    }
     function evalCol(r, c) {
       const f = c.filter; if (!f || f.value === '' || f.value == null) return true;
       if (c.type === 'num') { const v = Number(r[c.key] ?? 0), val = Number(f.value); if (isNaN(val)) return true; return f.op === 'gte' ? v >= val : f.op === 'lte' ? v <= val : v === val; }
