@@ -52,6 +52,7 @@ public class QueryHistoryStore
         // Migration nhẹ: bổ sung cột cho DB cũ (SQLite không có ADD COLUMN IF NOT EXISTS).
         EnsureColumn(conn, "ClientHost");
         EnsureColumn(conn, "Application");
+        EnsureColumn(conn, "Error");
         _logger.LogInformation("SQLite history store sẵn sàng tại {Conn}", _connectionString);
     }
 
@@ -77,9 +78,9 @@ public class QueryHistoryStore
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 INSERT INTO QueryHistory
-                    (Pid, UserName, Database, Client, ClientHost, Application, QueryStart, QueryEnd, DurationSeconds, QueryText)
+                    (Pid, UserName, Database, Client, ClientHost, Application, QueryStart, QueryEnd, DurationSeconds, QueryText, Error)
                 VALUES
-                    ($pid, $user, $db, $client, $host, $app, $start, $end, $dur, $text);";
+                    ($pid, $user, $db, $client, $host, $app, $start, $end, $dur, $text, $err);";
             cmd.Parameters.AddWithValue("$pid", entry.Pid);
             cmd.Parameters.AddWithValue("$user", (object?)entry.UserName ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$db", (object?)entry.Database ?? DBNull.Value);
@@ -90,6 +91,7 @@ public class QueryHistoryStore
             cmd.Parameters.AddWithValue("$end", entry.QueryEnd.ToString("o"));
             cmd.Parameters.AddWithValue("$dur", entry.DurationSeconds);
             cmd.Parameters.AddWithValue("$text", (object?)entry.QueryText ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("$err", (object?)entry.Error ?? DBNull.Value);
             cmd.ExecuteNonQuery();
         }
     }
@@ -102,7 +104,7 @@ public class QueryHistoryStore
         conn.Open();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            SELECT Id, Pid, UserName, Database, Client, ClientHost, Application, QueryStart, QueryEnd, DurationSeconds, QueryText
+            SELECT Id, Pid, UserName, Database, Client, ClientHost, Application, QueryStart, QueryEnd, DurationSeconds, QueryText, Error
             FROM QueryHistory
             WHERE DurationSeconds >= $minDur
             ORDER BY DurationSeconds DESC
@@ -125,7 +127,8 @@ public class QueryHistoryStore
                 QueryStart = reader.IsDBNull(7) ? null : DateTime.Parse(reader.GetString(7)),
                 QueryEnd = DateTime.Parse(reader.GetString(8)),
                 DurationSeconds = reader.GetDouble(9),
-                QueryText = reader.IsDBNull(10) ? null : reader.GetString(10)
+                QueryText = reader.IsDBNull(10) ? null : reader.GetString(10),
+                Error = reader.IsDBNull(11) ? null : reader.GetString(11)
             });
         }
         return result;

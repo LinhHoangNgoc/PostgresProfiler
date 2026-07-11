@@ -24,8 +24,11 @@ public class TraceEvent
     /// <summary>Thời gian thực thi (mili-giây).</summary>
     public double DurationMs { get; set; }
 
-    /// <summary>Loại: statement (simple) hoặc execute (extended protocol).</summary>
+    /// <summary>Loại: statement / execute / error.</summary>
     public string? Kind { get; set; }
+
+    /// <summary>Thông báo lỗi nếu câu lệnh bị lỗi (null nếu thành công).</summary>
+    public string? Error { get; set; }
 
     public string? Query { get; set; }
 }

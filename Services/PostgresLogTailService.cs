@@ -139,60 +139,103 @@ public partial class PostgresLogTailService : BackgroundService
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    /// <summary>Phân tích một bản ghi log; nếu là câu lệnh có duration thì tạo TraceEvent.</summary>
+    // Lỗi đang chờ ghép với dòng STATEMENT (key = pid).
+    private readonly Dictionary<int, (string Msg, DateTimeOffset Ts, string? User, string? Db)> _pendingErr = new();
+
+    /// <summary>
+    /// Phân tích một bản ghi log. Xử lý 2 loại:
+    /// - LOG "duration: ... statement/execute:" -> câu lệnh chạy xong (có duration).
+    /// - ERROR/FATAL + STATEMENT -> câu lệnh bị lỗi (ghép 2 dòng liền nhau theo pid).
+    /// </summary>
     private void EmitEntry(string entry, List<TraceEvent> batch)
     {
         var m = EntryRegex().Match(entry);
-        if (!m.Success || m.Groups["sev"].Value != "LOG") return;
+        if (!m.Success) return;
 
-        var dm = DurationRegex().Match(m.Groups["msg"].Value);
-        if (!dm.Success) return; // bỏ qua parse/bind và các log không phải câu lệnh
-
-        double ms = double.TryParse(dm.Groups["ms"].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : 0;
-        var sql = dm.Groups["sql"].Value.Trim();
-
-        // Chuẩn hoá thời gian; nếu parse lỗi để null (frontend tự dùng giờ nhận).
-        string? timeIso = null;
-        if (DateTimeOffset.TryParse(m.Groups["ts"].Value, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeLocal, out var ts))
-            timeIso = ts.ToString("o");
-
+        var sev = m.Groups["sev"].Value;
+        var msg = m.Groups["msg"].Value;
         int pidNum = int.TryParse(m.Groups["pid"].Value, out var pid) ? pid : 0;
+        string? user = m.Groups["user"].Success ? m.Groups["user"].Value : null;
+        string? db = m.Groups["db"].Success ? m.Groups["db"].Value : null;
+        DateTimeOffset ts = default;
+        DateTimeOffset.TryParse(m.Groups["ts"].Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out ts);
 
-        // Ghép thông tin máy con (IP, phần mềm, tên máy) theo PID.
-        var info = _clientInfo.Get(pidNum);
+        switch (sev)
+        {
+            case "LOG":
+                var dm = DurationRegex().Match(msg);
+                if (!dm.Success) return; // bỏ parse/bind và log không phải câu lệnh
+                double ms = double.TryParse(dm.Groups["ms"].Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : 0;
+                Emit(batch, ts, pidNum, user, db,
+                     dm.Groups["kind"].Value.StartsWith("execute") ? "execute" : "statement",
+                     dm.Groups["sql"].Value.Trim(), ms, null);
+                break;
+
+            case "ERROR":
+            case "FATAL":
+            case "PANIC":
+                // Chờ dòng STATEMENT kế tiếp để lấy nội dung câu lệnh.
+                if (_pendingErr.Count > 200) _pendingErr.Clear();
+                _pendingErr[pidNum] = (msg.Trim(), ts, user, db);
+                break;
+
+            case "DETAIL":
+            case "HINT":
+            case "CONTEXT":
+                if (_pendingErr.TryGetValue(pidNum, out var pe0))
+                    _pendingErr[pidNum] = (pe0.Msg + "\n" + sev + ": " + msg.Trim(), pe0.Ts, pe0.User, pe0.Db);
+                break;
+
+            case "STATEMENT":
+                if (_pendingErr.TryGetValue(pidNum, out var pe))
+                {
+                    _pendingErr.Remove(pidNum);
+                    Emit(batch, pe.Ts == default ? ts : pe.Ts, pidNum, user ?? pe.User, db ?? pe.Db,
+                         "error", msg.Trim(), 0, pe.Msg);
+                }
+                break;
+        }
+    }
+
+    /// <summary>Tạo TraceEvent (kèm thông tin máy con), đẩy batch và ghi lịch sử nếu cần.</summary>
+    private void Emit(List<TraceEvent> batch, DateTimeOffset ts, int pid, string? user, string? db,
+                      string kind, string sql, double ms, string? error)
+    {
+        var info = _clientInfo.Get(pid);
         string? ip = info?.Ip;
 
         var ev = new TraceEvent
         {
-            Time = timeIso,
-            Pid = pidNum,
-            User = m.Groups["user"].Success ? m.Groups["user"].Value : null,
-            Database = m.Groups["db"].Success ? m.Groups["db"].Value : null,
+            Time = ts == default ? null : ts.ToString("o"),
+            Pid = pid,
+            User = user,
+            Database = db,
             Client = ip,
             ClientHost = _clientInfo.HostFor(ip),
             Application = info?.Application,
             DurationMs = ms,
-            Kind = dm.Groups["kind"].Value.StartsWith("execute") ? "execute" : "statement",
+            Kind = kind,
+            Error = error,
             Query = sql
         };
         batch.Add(ev);
 
-        // Ghi lịch sử nếu đạt ngưỡng "chậm".
-        if (ms / 1000.0 >= _minDurationToLogSeconds)
+        // Ghi lịch sử: câu chậm (>= ngưỡng) HOẶC câu bị lỗi (luôn lưu).
+        if (error != null || ms / 1000.0 >= _minDurationToLogSeconds)
         {
             _history.Insert(new QueryHistoryEntry
             {
-                Pid = ev.Pid,
-                UserName = ev.User,
-                Database = ev.Database,
-                Client = ev.Client,
+                Pid = pid,
+                UserName = user,
+                Database = db,
+                Client = ip,
                 ClientHost = ev.ClientHost,
                 Application = ev.Application,
                 QueryStart = ts == default ? null : ts.UtcDateTime.AddMilliseconds(-ms),
                 QueryEnd = ts == default ? DateTime.UtcNow : ts.UtcDateTime,
                 DurationSeconds = ms / 1000.0,
-                QueryText = sql
+                QueryText = sql,
+                Error = error
             });
         }
     }

@@ -5,116 +5,121 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>PG Monitor - Trace PostgreSQL realtime</title>
   <style>
+    /* ===== Theme qua biến CSS ===== */
+    :root {
+      --bg: #1e1e2e; --panel: #181825; --thbg: #232334; --border: #45475a; --border-soft: #313244;
+      --text: #e0e0e0; --muted: #6c7086; --accent: #89b4fa; --input: #313244;
+      --slow: #4b2e2e; --slow-fg: #f38ba8; --sel: #28406a; --err: #5a2a2a; --err-fg: #f38ba8;
+      --kw: #89b4fa; --str: #a6e3a1; --num: #fab387; --com: #6c7086; --idn: #f9e2af; --fn: #94e2d5;
+    }
+    body.light {
+      --bg: #f4f6fb; --panel: #ffffff; --thbg: #eaeef6; --border: #cbd3e1; --border-soft: #e3e8f0;
+      --text: #1e2230; --muted: #6b7280; --accent: #2f6fed; --input: #ffffff;
+      --slow: #ffe1e1; --slow-fg: #b42318; --sel: #cfe0ff; --err: #ffdada; --err-fg: #b42318;
+      --kw: #2f6fed; --str: #1a7f37; --num: #b45309; --com: #8a94a6; --idn: #9a6700; --fn: #0e7490;
+    }
     * { box-sizing: border-box; }
     html, body { height: 100%; }
-    body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; background: #1e1e2e; color: #e0e0e0; }
+    body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); }
     .spacer { flex: 1; }
-    button { background: #89b4fa; color: #1e1e2e; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    button { background: var(--accent); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    body.light button { color: #fff; }
     button:hover { filter: brightness(1.08); }
-    button.secondary { background: #45475a; color: #e0e0e0; }
+    button.secondary { background: var(--border); color: var(--text); }
     button.danger { background: #f38ba8; color: #1e1e2e; }
     button.go { background: #a6e3a1; color: #1e1e2e; }
     button.small { padding: 4px 9px; font-size: 12px; }
-    input, select { background: #313244; color: #e0e0e0; border: 1px solid #45475a; padding: 6px 8px; border-radius: 6px; }
+    input, select { background: var(--input); color: var(--text); border: 1px solid var(--border); padding: 6px 8px; border-radius: 6px; }
     .status { font-size: 12px; padding: 2px 9px; border-radius: 12px; }
     .status.connected { background: #2e4b2e; color: #a6e3a1; }
     .status.disconnected { background: #4b2e2e; color: #f38ba8; }
     .status.connecting { background: #4b452e; color: #f9e2af; }
-    .muted { color: #6c7086; }
+    .muted { color: var(--muted); }
 
-    /* ===== Đăng nhập ===== */
-    #loginScreen { max-width: 340px; margin: 70px auto; background: #181825; padding: 28px; border-radius: 10px; border: 1px solid #313244; }
-    #loginScreen h2 { margin-top: 0; color: #89b4fa; }
+    #loginScreen { max-width: 340px; margin: 70px auto; background: var(--panel); padding: 28px; border-radius: 10px; border: 1px solid var(--border-soft); }
+    #loginScreen h2 { margin-top: 0; color: var(--accent); }
     #loginScreen input { width: 100%; margin-bottom: 12px; }
     #loginScreen button { width: 100%; }
     #loginError { color: #f38ba8; font-size: 13px; min-height: 18px; }
 
-    /* ===== App full-viewport, không cuộn trang ===== */
     #app { display: none; flex-direction: column; height: 100vh; }
-    .topbar { flex: 0 0 auto; background: #181825; border-bottom: 1px solid #313244; padding: 7px 14px; display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
-    .topbar h1 { font-size: 15px; margin: 0; color: #89b4fa; }
-    .topbar label { font-size: 12px; color: #a6adc8; display: flex; align-items: center; gap: 4px; }
+    .topbar { flex: 0 0 auto; background: var(--panel); border-bottom: 1px solid var(--border-soft); padding: 7px 12px; display: flex; align-items: center; gap: 7px 9px; flex-wrap: wrap; }
+    .topbar h1 { font-size: 15px; margin: 0; color: var(--accent); }
+    .topbar label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
     .tab-group { display: flex; gap: 4px; }
-    .tab { background: #313244; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-    .tab.active { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
+    .tab { background: var(--input); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; border: 1px solid var(--border-soft); }
+    .tab.active { background: var(--accent); color: #fff; font-weight: 600; }
     .trace-state { font-size: 12px; padding: 2px 9px; border-radius: 12px; }
     .trace-state.on { background: #2e4b2e; color: #a6e3a1; }
     .trace-state.off { background: #4b2e2e; color: #f38ba8; }
-    .sep { width: 1px; align-self: stretch; background: #313244; margin: 0 2px; }
+    .sep { width: 1px; align-self: stretch; background: var(--border-soft); margin: 0 2px; }
 
-    .content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 14px 10px; }
+    .content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px 10px; }
     #livePanel, #historyPanel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .count { font-size: 12px; color: #a6adc8; margin: 2px 0 6px; flex: 0 0 auto; }
+    .count { font-size: 12px; color: var(--muted); margin: 2px 0 6px; flex: 0 0 auto; }
 
-    .tableWrap { flex: 1; min-height: 60px; overflow: auto; border: 1px solid #45475a; border-radius: 8px; }
+    .tableWrap { flex: 1; min-height: 60px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
     table { border-collapse: collapse; table-layout: fixed; font-size: 13px; }
     #liveTable { width: auto; }
     #historyTable { width: 100%; }
-    th, td { text-align: left; padding: 6px 9px; border: 1px solid #45475a; vertical-align: top; overflow: hidden; }
+    th, td { text-align: left; padding: 6px 9px; border: 1px solid var(--border); vertical-align: top; overflow: hidden; }
     td { white-space: nowrap; text-overflow: ellipsis; }
-    th { position: sticky; top: 0; background: #232334; color: #89b4fa; z-index: 1; user-select: none; }
+    th { position: sticky; top: 0; background: var(--thbg); color: var(--accent); z-index: 1; user-select: none; }
     #liveHeadRow th { padding-right: 20px; cursor: grab; }
-    #liveHeadRow th.dragover { outline: 2px dashed #89b4fa; outline-offset: -2px; }
+    #liveHeadRow th.dragover { outline: 2px dashed var(--accent); outline-offset: -2px; }
     .th-inner { display: flex; align-items: center; gap: 6px; }
     .th-label { overflow: hidden; text-overflow: ellipsis; }
-    .th-filter { cursor: pointer; font-size: 11px; color: #6c7086; margin-left: auto; }
-    .th-filter:hover { color: #cdd6f4; }
+    .th-filter { cursor: pointer; color: var(--muted); margin-left: auto; display: inline-flex; }
+    .th-filter:hover { color: var(--text); }
     .th-filter.active { color: #f9e2af; }
+    .th-filter.active svg { filter: drop-shadow(0 0 2px #f9e2af88); }
     .resizer { position: absolute; right: 0; top: 0; width: 7px; height: 100%; cursor: col-resize; }
     .resizer:hover { background: #89b4fa55; }
     td.query { white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12px; }
     tbody tr { cursor: pointer; }
-    tr.slow td { background: #4b2e2e; color: #f38ba8; }
-    tr.selected td { background: #28406a !important; color: #e0e0e0 !important; }
+    tr.slow td { background: var(--slow); color: var(--slow-fg); }
+    tr.err td { background: var(--err); color: var(--err-fg); }
+    tr.selected td { background: var(--sel) !important; color: var(--text) !important; }
 
-    /* Splitter kéo giữa grid và chi tiết */
     .splitter { flex: 0 0 10px; cursor: row-resize; display: flex; align-items: center; justify-content: center; }
-    .splitter::before { content: ''; width: 46px; height: 3px; background: #45475a; border-radius: 2px; }
-    .splitter:hover::before { background: #89b4fa; }
-
-    .detailPanel { flex: 0 0 auto; height: 190px; min-height: 60px; display: flex; flex-direction: column; border: 1px solid #45475a; border-radius: 8px; background: #181825; overflow: hidden; }
-    .detail-head { flex: 0 0 auto; padding: 6px 10px; border-bottom: 1px solid #313244; display: flex; align-items: center; gap: 10px; color: #89b4fa; font-size: 13px; }
-    #detailContent { flex: 1; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5px; color: #cdd6f4; }
+    .splitter::before { content: ''; width: 46px; height: 3px; background: var(--border); border-radius: 2px; }
+    .splitter:hover::before { background: var(--accent); }
+    .detailPanel { flex: 0 0 auto; height: 190px; min-height: 60px; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); overflow: hidden; }
+    .detail-head { flex: 0 0 auto; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); display: flex; align-items: center; gap: 10px; color: var(--accent); font-size: 13px; }
+    #detailContent { flex: 1; margin: 0; padding: 10px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5px; color: var(--text); }
 
     .col-dt { width: 150px; }
-    .pop { position: absolute; z-index: 60; background: #232334; border: 1px solid #45475a; border-radius: 8px; padding: 10px; width: 230px; display: none; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
-    .pop .title { font-size: 12px; color: #89b4fa; }
+    .pop { position: absolute; z-index: 60; background: var(--thbg); border: 1px solid var(--border); border-radius: 8px; padding: 10px; width: 230px; display: none; flex-direction: column; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+    .pop .title { font-size: 12px; color: var(--accent); }
     .pop select, .pop input { width: 100%; }
     .pop .row { display: flex; gap: 6px; }
     .pop .row button { flex: 1; }
 
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50; }
-    .modal-box { background: #1e1e2e; border: 1px solid #45475a; border-radius: 10px; width: min(920px, 92vw); max-height: 85vh; display: flex; flex-direction: column; }
-    .modal-head { padding: 10px 14px; border-bottom: 1px solid #313244; display: flex; justify-content: space-between; align-items: center; color: #89b4fa; }
-    .modal-head button { background: #45475a; color: #e0e0e0; }
-    #modalContent { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 13px; color: #cdd6f4; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 50; }
+    .modal-box { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; width: min(920px, 92vw); max-height: 85vh; display: flex; flex-direction: column; }
+    .modal-head { padding: 10px 14px; border-bottom: 1px solid var(--border-soft); display: flex; justify-content: space-between; align-items: center; color: var(--accent); }
+    .modal-head button { background: var(--border); color: var(--text); }
+    #modalErr { color: var(--err-fg); padding: 8px 14px 0; font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5px; white-space: pre-wrap; }
+    #modalContent { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: 'Cascadia Code', Consolas, monospace; font-size: 13px; color: var(--text); }
 
-    /* Tô màu cú pháp SQL (tự viết) */
-    .sql-kw  { color: #89b4fa; font-weight: 600; }
-    .sql-str { color: #a6e3a1; }
-    .sql-num { color: #fab387; }
-    .sql-com { color: #6c7086; font-style: italic; }
-    .sql-id  { color: #f9e2af; }
-    .sql-fn  { color: #94e2d5; }
+    .sql-kw { color: var(--kw); font-weight: 600; } .sql-str { color: var(--str); } .sql-num { color: var(--num); }
+    .sql-com { color: var(--com); font-style: italic; } .sql-id { color: var(--idn); } .sql-fn { color: var(--fn); }
   </style>
 </head>
 <body>
-  <!-- ===== Đăng nhập ===== -->
   <div id="loginScreen">
     <h2>PG Monitor</h2>
     <p class="muted" style="font-size:13px;margin-top:0">Đăng nhập bằng tài khoản PostgreSQL</p>
     <input id="username" type="text" placeholder="Username (PostgreSQL)" autocomplete="username" />
     <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
-    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:#a6adc8;margin-bottom:12px;cursor:pointer">
+    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);margin-bottom:12px;cursor:pointer">
       <input type="checkbox" id="remember" style="width:auto;margin:0" /> Ghi nhớ đăng nhập &amp; tự động đăng nhập
     </label>
     <button id="loginBtn">Đăng nhập</button>
     <div id="loginError"></div>
   </div>
 
-  <!-- ===== Ứng dụng ===== -->
   <div id="app">
-    <!-- Header dồn tabs + điều khiển trace + nút -->
     <div class="topbar">
       <h1>PG Monitor</h1>
       <span id="connStatus" class="status connecting">Đang kết nối...</span>
@@ -127,17 +132,19 @@
       <button class="go small live-only" id="startTrace">▶ Bắt đầu</button>
       <button class="danger small live-only" id="stopTrace">■ Dừng</button>
       <span id="traceState" class="trace-state off live-only">Trace: tắt</span>
-      <label class="live-only">≥ <input type="number" id="thresholdMs" min="0" step="50" value="0" style="width:74px" /> ms</label>
+      <label class="live-only">≥ <input type="number" id="thresholdMs" min="0" step="50" value="0" style="width:70px" /> ms</label>
+      <input class="live-only" id="quickSearch" type="text" placeholder="🔍 Tìm nhanh..." style="width:150px" />
       <div class="spacer"></div>
-      <label class="live-only"><input type="checkbox" id="pauseView" style="width:auto" /> Tạm dừng</label>
+      <label class="live-only" title="Mới nhất ở đáy; tự cuộn xuống"><input type="checkbox" id="autoScroll" style="width:auto" checked /> Tự cuộn</label>
+      <button class="secondary small live-only" id="saveCsv">💾 Lưu CSV</button>
       <button class="secondary small live-only" id="clearFilters">Xoá filter</button>
       <button class="secondary small live-only" id="resetCols">Cột mặc định</button>
       <button class="secondary small live-only" id="clearGrid">Xoá màn hình</button>
+      <button class="secondary small" id="themeBtn" title="Sáng/Tối">🌙</button>
       <button class="secondary small" id="logoutBtn">Đăng xuất</button>
     </div>
 
     <div class="content">
-      <!-- LIVE -->
       <div id="livePanel">
         <div class="count" id="liveCount"></div>
         <div class="tableWrap" id="gridArea">
@@ -160,12 +167,12 @@
         </div>
       </div>
 
-      <!-- HISTORY -->
       <div id="historyPanel" style="display:none">
-        <div class="count" style="display:flex;gap:10px;align-items:center">
+        <div class="count" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <label class="muted">Min duration (s) <input type="number" id="hMinDur" min="0" step="0.5" value="1" style="width:80px" /></label>
           <label class="muted">Limit <input type="number" id="hLimit" min="1" max="500" value="50" style="width:70px" /></label>
           <button class="small" id="reloadHistory">Tải lịch sử</button>
+          <button class="secondary small" id="saveHistCsv">💾 Lưu CSV</button>
           <span id="historyCount"></span>
         </div>
         <div class="tableWrap">
@@ -174,7 +181,7 @@
               <col style="width:56px"><col style="width:100px"><col style="width:100px"><col style="width:130px"><col style="width:84px"><col style="width:96px"><col class="col-dt"><col class="col-dt"><col style="width:92px"><col>
             </colgroup>
             <thead>
-              <tr><th>PID</th><th>IP máy con</th><th>Tên máy</th><th>Phần mềm</th><th>User</th><th>Database</th><th>Bắt đầu</th><th>Kết thúc</th><th>Duration (s)</th><th>Query</th></tr>
+              <tr><th>PID</th><th>IP máy con</th><th>Tên máy</th><th>Phần mềm</th><th>User</th><th>Database</th><th>Bắt đầu</th><th>Kết thúc</th><th>Duration (s)</th><th>Query / Lỗi</th></tr>
             </thead>
             <tbody id="historyBody"></tbody>
           </table>
@@ -183,21 +190,17 @@
     </div>
   </div>
 
-  <!-- Popup filter theo cột -->
   <div class="pop" id="colFilterPop">
     <div class="title" id="popTitle">Lọc cột</div>
     <select id="popOp"></select>
     <input id="popVal" placeholder="giá trị..." />
-    <div class="row">
-      <button class="small" id="popApply">Áp dụng</button>
-      <button class="secondary small" id="popClear">Xoá</button>
-    </div>
+    <div class="row"><button class="small" id="popApply">Áp dụng</button><button class="secondary small" id="popClear">Xoá</button></div>
   </div>
 
-  <!-- Modal -->
   <div class="modal-overlay" id="modal">
     <div class="modal-box">
       <div class="modal-head"><span id="modalTitle">Nội dung câu lệnh</span><button id="modalClose">Đóng ✕</button></div>
+      <div id="modalErr" style="display:none"></div>
       <pre id="modalContent"></pre>
     </div>
   </div>
@@ -205,13 +208,18 @@
   <script src="/lib/signalr.min.js"></script>
   <script>
     let token = null, connection = null;
-    let events = [], seq = 0;
+    let events = [], seq = 0, visibleRows = [];
     const selectedIds = new Set();
-    const MAX = 1000, SLOW_MS = 5000;
+    const MAX = 2000, SLOW_MS = 5000;
     const $ = id => document.getElementById(id);
     function esc(s) { return (s ?? '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-    // ===== Tô màu SQL (không lib ngoài) =====
+    // ===== Theme =====
+    function applyTheme(t) { document.body.classList.toggle('light', t === 'light'); $('themeBtn').textContent = t === 'light' ? '☀️' : '🌙'; }
+    applyTheme(localStorage.getItem('pgmon_theme') || 'dark');
+    $('themeBtn').addEventListener('click', () => { const t = document.body.classList.contains('light') ? 'dark' : 'light'; localStorage.setItem('pgmon_theme', t); applyTheme(t); });
+
+    // ===== Tô màu SQL =====
     const SQL_KW = new Set(('select insert update delete from where join inner left right full outer cross on and or not null is in exists between like ilike as order by group having limit offset union all distinct into values set create table drop alter add column index view primary key foreign references default case when then else end begin commit rollback declare return returns function procedure call do language loop foreach array if elsif while with recursive using cast asc desc over partition true false int integer bigint smallint text varchar char boolean bool timestamp timestamptz date time numeric decimal real float serial jsonb json uuid').split(' '));
     function highlightSql(sql) {
       const re = /(\/\*[\s\S]*?\*\/|--[^\n]*)|('(?:[^']|'')*'|\$[a-zA-Z_]*\$[\s\S]*?\$[a-zA-Z_]*\$)|("(?:[^"]|"")*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)/g;
@@ -222,84 +230,52 @@
         else if (m[2]) out += `<span class="sql-str">${esc(m[2])}</span>`;
         else if (m[3]) out += `<span class="sql-id">${esc(m[3])}</span>`;
         else if (m[4]) out += `<span class="sql-num">${esc(m[4])}</span>`;
-        else {
-          const w = m[5];
-          if (SQL_KW.has(w.toLowerCase())) out += `<span class="sql-kw">${esc(w)}</span>`;
-          else if (sql[re.lastIndex] === '(') out += `<span class="sql-fn">${esc(w)}</span>`;
-          else out += esc(w);
-        }
+        else { const w = m[5]; if (SQL_KW.has(w.toLowerCase())) out += `<span class="sql-kw">${esc(w)}</span>`; else if (sql[re.lastIndex] === '(') out += `<span class="sql-fn">${esc(w)}</span>`; else out += esc(w); }
       }
-      out += esc(sql.slice(last));
-      return out;
+      return out + esc(sql.slice(last));
     }
+    const FUNNEL = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M1 2.5h14L9.5 9v4.2l-3 1.6V9z" fill="currentColor"/></svg>';
 
-    // ===== Cột (resize/reorder/filter, nhớ ở localStorage) =====
+    // ===== Cột =====
     const DEFAULT_COLUMNS = [
-      { key: 'time',        label: 'Thời gian',     width: 96,  type: 'time' },
-      { key: 'pid',         label: 'PID',           width: 58,  type: 'num'  },
-      { key: 'client',      label: 'IP máy con',    width: 110, type: 'text' },
-      { key: 'clientHost',  label: 'Tên máy',       width: 110, type: 'text' },
-      { key: 'application', label: 'Phần mềm',      width: 150, type: 'text' },
-      { key: 'user',        label: 'User',          width: 90,  type: 'text' },
-      { key: 'database',    label: 'Database',      width: 100, type: 'text' },
-      { key: 'durationMs',  label: 'Duration (ms)', width: 100, type: 'num'  },
-      { key: 'query',       label: 'Query',         width: 500, type: 'text' },
+      { key: 'time', label: 'Thời gian', width: 96, type: 'time' },
+      { key: 'pid', label: 'PID', width: 58, type: 'num' },
+      { key: 'client', label: 'IP máy con', width: 110, type: 'text' },
+      { key: 'clientHost', label: 'Tên máy', width: 110, type: 'text' },
+      { key: 'application', label: 'Phần mềm', width: 150, type: 'text' },
+      { key: 'user', label: 'User', width: 90, type: 'text' },
+      { key: 'database', label: 'Database', width: 100, type: 'text' },
+      { key: 'durationMs', label: 'Duration (ms)', width: 100, type: 'num' },
+      { key: 'query', label: 'Query', width: 520, type: 'text' },
     ];
-    const OPS = {
-      text: [ { key: 'contains', label: 'Chứa (Like)' }, { key: 'notcontains', label: 'Không chứa (Not Like)' } ],
-      num:  [ { key: 'gte', label: '≥' }, { key: 'lte', label: '≤' }, { key: 'eq', label: '=' } ],
-      time: [ { key: 'contains', label: 'Chứa (Like)' }, { key: 'notcontains', label: 'Không chứa (Not Like)' } ],
-    };
-    const LS_KEY = 'pgmon_grid_v1';
+    const OPS = { text: [{ key: 'contains', label: 'Chứa (Like)' }, { key: 'notcontains', label: 'Không chứa (Not Like)' }], num: [{ key: 'gte', label: '≥' }, { key: 'lte', label: '≤' }, { key: 'eq', label: '=' }], time: [{ key: 'contains', label: 'Chứa (Like)' }, { key: 'notcontains', label: 'Không chứa (Not Like)' }] };
+    const LS_KEY = 'pgmon_grid_v2';
     let columns = loadLayout();
-
     function loadLayout() {
-      try {
-        const saved = JSON.parse(localStorage.getItem(LS_KEY));
-        if (Array.isArray(saved) && saved.length) {
-          const map = Object.fromEntries(DEFAULT_COLUMNS.map(c => [c.key, c]));
-          const cols = saved.filter(s => map[s.key]).map(s => ({ ...map[s.key], width: s.width || map[s.key].width, filter: s.filter || null }));
-          for (const d of DEFAULT_COLUMNS) if (!cols.find(c => c.key === d.key)) cols.push({ ...d });
-          return cols;
-        }
-      } catch {}
-      return DEFAULT_COLUMNS.map(c => ({ ...c }));
+      try { const s = JSON.parse(localStorage.getItem(LS_KEY));
+        if (Array.isArray(s) && s.length) { const map = Object.fromEntries(DEFAULT_COLUMNS.map(c => [c.key, c]));
+          const cols = s.filter(x => map[x.key]).map(x => ({ ...map[x.key], width: x.width || map[x.key].width, filter: x.filter || null }));
+          for (const d of DEFAULT_COLUMNS) if (!cols.find(c => c.key === d.key)) cols.push({ ...d }); return cols; }
+      } catch {} return DEFAULT_COLUMNS.map(c => ({ ...c }));
     }
-    function saveLayout() {
-      localStorage.setItem(LS_KEY, JSON.stringify(columns.map(c => ({ key: c.key, width: c.width, filter: c.filter || null }))));
-    }
+    function saveLayout() { localStorage.setItem(LS_KEY, JSON.stringify(columns.map(c => ({ key: c.key, width: c.width, filter: c.filter || null })))); }
 
     // ===== Đăng nhập =====
     async function login() {
-      const username = $('username').value.trim(), password = $('password').value;
-      $('loginError').textContent = '';
+      const username = $('username').value.trim(), password = $('password').value; $('loginError').textContent = '';
       try {
         const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
-        if (!res.ok) {
-          if (res.status === 401) localStorage.removeItem('pgmon_cred');
-          $('loginError').textContent = res.status === 401 ? 'Sai username hoặc password PostgreSQL.' : 'Đăng nhập lỗi (' + res.status + ').';
-          return;
-        }
+        if (!res.ok) { if (res.status === 401) localStorage.removeItem('pgmon_cred'); $('loginError').textContent = res.status === 401 ? 'Sai username hoặc password PostgreSQL.' : 'Đăng nhập lỗi (' + res.status + ').'; return; }
         token = (await res.json()).token;
-        if ($('remember').checked) localStorage.setItem('pgmon_cred', JSON.stringify({ username, password }));
-        else localStorage.removeItem('pgmon_cred');
-        $('loginScreen').style.display = 'none';
-        $('app').style.display = 'flex';
-        restoreSplit(); buildHead(); renderLive();
-        startSignalR(); refreshTraceStatus();
+        if ($('remember').checked) localStorage.setItem('pgmon_cred', JSON.stringify({ username, password })); else localStorage.removeItem('pgmon_cred');
+        $('loginScreen').style.display = 'none'; $('app').style.display = 'flex';
+        restoreSplit(); buildHead(); renderLive(); startSignalR(); refreshTraceStatus();
       } catch { $('loginError').textContent = 'Không kết nối được máy chủ.'; }
     }
     $('loginBtn').addEventListener('click', login);
     $('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
     $('logoutBtn').addEventListener('click', () => { localStorage.removeItem('pgmon_cred'); location.reload(); });
-    // Bỏ tạm dừng -> hiển thị ngay những gì đã gom trong lúc dừng.
-    $('pauseView').addEventListener('change', () => { if (!$('pauseView').checked) renderLive(); });
-    (function autoLogin() {
-      try { const raw = localStorage.getItem('pgmon_cred'); if (!raw) return;
-        const c = JSON.parse(raw); $('username').value = c.username || ''; $('password').value = c.password || '';
-        $('remember').checked = true; login();
-      } catch {}
-    })();
+    (function autoLogin() { try { const raw = localStorage.getItem('pgmon_cred'); if (!raw) return; const c = JSON.parse(raw); $('username').value = c.username || ''; $('password').value = c.password || ''; $('remember').checked = true; login(); } catch {} })();
     function setStatus(state, text) { const el = $('connStatus'); if (el) { el.className = 'status ' + state; el.textContent = text; } }
 
     // ===== SignalR =====
@@ -307,10 +283,9 @@
       connection = new signalR.HubConnectionBuilder().withUrl('/hubs/monitor', { accessTokenFactory: () => token }).withAutomaticReconnect().build();
       connection.on('TraceEvents', evs => {
         if (!evs || !evs.length) return;
-        // Vẫn thu thập event khi tạm dừng; chỉ đóng băng hiển thị (không render).
-        for (const e of evs) { e._id = ++seq; events.unshift(e); }
-        if (events.length > MAX) events.length = MAX;
-        if (!$('pauseView').checked) renderLive();
+        for (const e of evs) { e._id = ++seq; events.push(e); }          // mới nhất ở CUỐI
+        if (events.length > MAX) events.splice(0, events.length - MAX);
+        renderLive();
       });
       connection.onreconnecting(() => setStatus('connecting', 'Đang kết nối lại...'));
       connection.onreconnected(() => setStatus('connected', 'Đã kết nối'));
@@ -319,164 +294,162 @@
     }
 
     // ===== Trace controls =====
-    const traceCall = path => fetch(path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+    const traceCall = p => fetch(p, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
     $('startTrace').addEventListener('click', async () => { const ms = parseInt($('thresholdMs').value) || 0; if ((await traceCall('/api/trace/start?thresholdMs=' + ms)).ok) setTraceState(true, ms); });
     $('stopTrace').addEventListener('click', async () => { if ((await traceCall('/api/trace/stop')).ok) setTraceState(false); });
     async function refreshTraceStatus() { try { const r = await fetch('/api/trace/status', { headers: { 'Authorization': 'Bearer ' + token } }); if (r.ok) { const s = await r.json(); setTraceState(s.running, s.thresholdMs); } } catch {} }
     function setTraceState(on, ms) { const el = $('traceState'); el.className = 'trace-state live-only ' + (on ? 'on' : 'off'); el.textContent = on ? `Trace: bật (≥ ${ms}ms)` : 'Trace: tắt'; if (on && ms >= 0) $('thresholdMs').value = ms; }
 
-    // ===== Định dạng ô =====
-    function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleTimeString('vi-VN',{hour12:false}) + '.' + String(d.getMilliseconds()).padStart(3,'0'); }
-    function cellText(r, col) { if (col.key === 'time') return fmtTime(r.time); if (col.key === 'durationMs') return (r.durationMs ?? 0).toFixed(2); return r[col.key]; }
-
-    // ===== Lọc theo cột =====
+    // ===== Ô / lọc =====
+    function fmtTime(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleTimeString('vi-VN', { hour12: false }) + '.' + String(d.getMilliseconds()).padStart(3, '0'); }
+    function cellText(r, col) { if (col.key === 'time') return fmtTime(r.time); if (col.key === 'durationMs') return r.error ? 'lỗi' : (r.durationMs ?? 0).toFixed(2); return r[col.key]; }
     function evalCol(r, c) {
       const f = c.filter; if (!f || f.value === '' || f.value == null) return true;
       if (c.type === 'num') { const v = Number(r[c.key] ?? 0), val = Number(f.value); if (isNaN(val)) return true; return f.op === 'gte' ? v >= val : f.op === 'lte' ? v <= val : v === val; }
       const v = (cellText(r, c) ?? '').toString().toLowerCase(), val = f.value.toLowerCase();
       return f.op === 'notcontains' ? !v.includes(val) : v.includes(val);
     }
-    function applyFilters(rows) { const active = columns.filter(c => c.filter && c.filter.value !== '' && c.filter.value != null); return active.length ? rows.filter(r => active.every(c => evalCol(r, c))) : rows; }
+    function computeVisible() {
+      const active = columns.filter(c => c.filter && c.filter.value !== '' && c.filter.value != null);
+      let rows = active.length ? events.filter(r => active.every(c => evalCol(r, c))) : events;
+      const q = $('quickSearch').value.trim().toLowerCase();
+      if (q) rows = rows.filter(r => columns.some(c => (cellText(r, c) ?? '').toString().toLowerCase().includes(q)) || (r.error || '').toLowerCase().includes(q));
+      return rows;
+    }
 
-    // ===== Header (colgroup + th) =====
     function totalWidth() { return columns.reduce((s, c) => s + (c.width || 80), 0); }
     function buildHead() {
       $('liveColgroup').innerHTML = columns.map(c => `<col style="width:${c.width}px">`).join('');
       $('liveTable').style.width = totalWidth() + 'px';
       $('liveHeadRow').innerHTML = columns.map((c, i) => {
         const active = c.filter && c.filter.value !== '' && c.filter.value != null;
-        return `<th data-i="${i}" draggable="true"><div class="th-inner"><span class="th-label">${esc(c.label)}</span><span class="th-filter${active ? ' active' : ''}" data-i="${i}" title="Lọc cột">▽</span></div><span class="resizer" data-i="${i}"></span></th>`;
+        return `<th data-i="${i}" draggable="true"><div class="th-inner"><span class="th-label">${esc(c.label)}</span><span class="th-filter${active ? ' active' : ''}" data-i="${i}" title="Lọc cột">${FUNNEL}</span></div><span class="resizer" data-i="${i}"></span></th>`;
       }).join('');
       wireHead();
     }
 
     function renderLive() {
-      const rows = applyFilters(events);
+      const rows = computeVisible(); visibleRows = rows;
       $('liveBody').innerHTML = rows.map(r => {
-        const cls = [];
-        if ((r.durationMs ?? 0) > SLOW_MS) cls.push('slow');
+        const cls = []; if (r.error) cls.push('err'); else if ((r.durationMs ?? 0) > SLOW_MS) cls.push('slow');
         if (selectedIds.has(r._id)) cls.push('selected');
         const tds = columns.map(c => `<td${c.key === 'query' ? ' class="query"' : ''}>${esc(cellText(r, c))}</td>`).join('');
         return `<tr data-id="${r._id}"${cls.length ? ` class="${cls.join(' ')}"` : ''}>${tds}</tr>`;
       }).join('');
-      const anyFilter = columns.some(c => c.filter && c.filter.value !== '' && c.filter.value != null);
-      $('liveCount').textContent = anyFilter ? `Hiển thị ${rows.length}/${events.length} dòng (đang lọc)` : `${events.length} dòng trace (mới nhất ở trên)`;
+      const anyFilter = columns.some(c => c.filter && c.filter.value !== '' && c.filter.value != null) || $('quickSearch').value.trim();
+      $('liveCount').textContent = anyFilter ? `Hiển thị ${rows.length}/${events.length} dòng (đang lọc)` : `${events.length} dòng trace`;
+      if ($('autoScroll').checked) { const g = $('gridArea'); g.scrollTop = g.scrollHeight; }   // tự cuộn xuống đáy
     }
+    $('quickSearch').addEventListener('input', renderLive);
 
     // ===== Header: resize + reorder + filter =====
     let resizing = null, dragSrc = null;
     function wireHead() {
-      $('liveHeadRow').querySelectorAll('th').forEach(th => {
-        const i = +th.dataset.i;
+      $('liveHeadRow').querySelectorAll('th').forEach(th => { const i = +th.dataset.i;
         th.addEventListener('dragstart', e => { if (resizing) { e.preventDefault(); return; } dragSrc = i; e.dataTransfer.effectAllowed = 'move'; });
         th.addEventListener('dragover', e => { e.preventDefault(); th.classList.add('dragover'); });
         th.addEventListener('dragleave', () => th.classList.remove('dragover'));
-        th.addEventListener('drop', e => { e.preventDefault(); th.classList.remove('dragover'); if (dragSrc == null || dragSrc === i) return; const moved = columns.splice(dragSrc, 1)[0]; columns.splice(i, 0, moved); dragSrc = null; saveLayout(); buildHead(); renderLive(); });
+        th.addEventListener('drop', e => { e.preventDefault(); th.classList.remove('dragover'); if (dragSrc == null || dragSrc === i) return; const mv = columns.splice(dragSrc, 1)[0]; columns.splice(i, 0, mv); dragSrc = null; saveLayout(); buildHead(); renderLive(); });
       });
-      $('liveHeadRow').querySelectorAll('.resizer').forEach(rz => {
-        rz.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); const i = +rz.dataset.i, th = rz.closest('th'); th.setAttribute('draggable', 'false'); resizing = { i, startX: e.clientX, startW: columns[i].width, th }; });
-      });
-      $('liveHeadRow').querySelectorAll('.th-filter').forEach(f => {
-        f.addEventListener('mousedown', e => e.stopPropagation());
-        f.addEventListener('click', e => { e.stopPropagation(); openColFilter(+f.dataset.i, f); });
-      });
+      $('liveHeadRow').querySelectorAll('.resizer').forEach(rz => rz.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); const i = +rz.dataset.i, th = rz.closest('th'); th.setAttribute('draggable', 'false'); resizing = { i, startX: e.clientX, startW: columns[i].width, th }; }));
+      $('liveHeadRow').querySelectorAll('.th-filter').forEach(f => { f.addEventListener('mousedown', e => e.stopPropagation()); f.addEventListener('click', e => { e.stopPropagation(); openColFilter(+f.dataset.i, f); }); });
     }
-    document.addEventListener('mousemove', e => {
-      if (!resizing) return;
-      const w = Math.max(44, resizing.startW + (e.clientX - resizing.startX));
-      columns[resizing.i].width = w; $('liveColgroup').children[resizing.i].style.width = w + 'px'; $('liveTable').style.width = totalWidth() + 'px';
-    });
+    document.addEventListener('mousemove', e => { if (!resizing) return; const w = Math.max(44, resizing.startW + (e.clientX - resizing.startX)); columns[resizing.i].width = w; $('liveColgroup').children[resizing.i].style.width = w + 'px'; $('liveTable').style.width = totalWidth() + 'px'; });
     document.addEventListener('mouseup', () => { if (resizing) { resizing.th.setAttribute('draggable', 'true'); resizing = null; saveLayout(); } });
 
-    // ===== Popup filter cột =====
     let popCol = null;
     function openColFilter(i, anchor) {
-      popCol = i; const c = columns[i];
-      $('popTitle').textContent = 'Lọc: ' + c.label;
+      popCol = i; const c = columns[i]; $('popTitle').textContent = 'Lọc: ' + c.label;
       $('popOp').innerHTML = OPS[c.type].map(o => `<option value="${o.key}">${o.label}</option>`).join('');
-      $('popOp').value = c.filter?.op || OPS[c.type][0].key;
-      $('popVal').value = c.filter?.value ?? ''; $('popVal').type = c.type === 'num' ? 'number' : 'text';
-      const pop = $('colFilterPop'), r = anchor.getBoundingClientRect();
-      pop.style.display = 'flex'; pop.style.left = Math.min(r.left, window.innerWidth - 240) + 'px'; pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
-      $('popVal').focus();
+      $('popOp').value = c.filter?.op || OPS[c.type][0].key; $('popVal').value = c.filter?.value ?? ''; $('popVal').type = c.type === 'num' ? 'number' : 'text';
+      const pop = $('colFilterPop'), r = anchor.getBoundingClientRect(); pop.style.display = 'flex'; pop.style.left = Math.min(r.left, window.innerWidth - 240) + 'px'; pop.style.top = (r.bottom + window.scrollY + 4) + 'px'; $('popVal').focus();
     }
     function closePop() { $('colFilterPop').style.display = 'none'; popCol = null; }
     $('popApply').addEventListener('click', () => { if (popCol == null) return; columns[popCol].filter = { op: $('popOp').value, value: $('popVal').value }; saveLayout(); buildHead(); renderLive(); closePop(); });
     $('popClear').addEventListener('click', () => { if (popCol == null) return; columns[popCol].filter = null; saveLayout(); buildHead(); renderLive(); closePop(); });
     $('popVal').addEventListener('keydown', e => { if (e.key === 'Enter') $('popApply').click(); });
-    document.addEventListener('click', e => { if (!$('colFilterPop').contains(e.target) && !e.target.classList.contains('th-filter')) closePop(); });
+    document.addEventListener('click', e => { if (!$('colFilterPop').contains(e.target) && !e.target.closest('.th-filter')) closePop(); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePop(); closeModal(); } });
 
-    // ===== Toolbar =====
-    $('clearFilters').addEventListener('click', () => { columns.forEach(c => c.filter = null); saveLayout(); buildHead(); renderLive(); });
+    $('clearFilters').addEventListener('click', () => { columns.forEach(c => c.filter = null); $('quickSearch').value = ''; saveLayout(); buildHead(); renderLive(); });
     $('resetCols').addEventListener('click', () => { columns = DEFAULT_COLUMNS.map(c => ({ ...c })); saveLayout(); buildHead(); renderLive(); });
     $('clearGrid').addEventListener('click', () => { events = []; selectedIds.clear(); updateDetail(); renderLive(); });
 
-    // ===== Chọn dòng + chi tiết (có format SQL) =====
+    // ===== Chọn dòng + chi tiết =====
     $('liveBody').addEventListener('click', e => {
-      const tr = e.target.closest('tr'); if (!tr) return;
-      const id = Number(tr.dataset.id);
-      if (e.ctrlKey || e.metaKey) selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id);
-      else { selectedIds.clear(); selectedIds.add(id); }
-      updateDetail();
-      $('liveBody').querySelectorAll('tr').forEach(row => row.classList.toggle('selected', selectedIds.has(Number(row.dataset.id))));
+      const tr = e.target.closest('tr'); if (!tr) return; const id = Number(tr.dataset.id);
+      if (e.ctrlKey || e.metaKey) selectedIds.has(id) ? selectedIds.delete(id) : selectedIds.add(id); else { selectedIds.clear(); selectedIds.add(id); }
+      updateDetail(); $('liveBody').querySelectorAll('tr').forEach(row => row.classList.toggle('selected', selectedIds.has(Number(row.dataset.id))));
     });
     $('liveBody').addEventListener('dblclick', e => { const tr = e.target.closest('tr'); if (!tr) return; const ev = events.find(x => x._id === Number(tr.dataset.id)); if (ev) openModal(ev); });
-    function detailHeader(ev) { const may = [ev.client, ev.clientHost, ev.application].filter(Boolean).join(' · '); return `-- PID ${ev.pid} | ${ev.user}@${ev.database}${may ? ' | ' + may : ''} | ${(ev.durationMs ?? 0).toFixed(2)} ms | ${fmtTime(ev.time)}`; }
+    function detailHeader(ev) { const may = [ev.client, ev.clientHost, ev.application].filter(Boolean).join(' · '); const dur = ev.error ? 'LỖI' : (ev.durationMs ?? 0).toFixed(2) + ' ms'; return `-- PID ${ev.pid} | ${ev.user}@${ev.database}${may ? ' | ' + may : ''} | ${dur} | ${fmtTime(ev.time)}`; }
     function updateDetail() {
       const sel = events.filter(e => selectedIds.has(e._id));
       if (!sel.length) { $('detailContent').innerHTML = ''; $('detailInfo').textContent = ''; return; }
       $('detailInfo').textContent = sel.length === 1 ? '1 dòng' : `${sel.length} dòng (ghép)`;
-      $('detailContent').innerHTML = sel.map(ev => `<span class="sql-com">${esc(detailHeader(ev))}</span>\n` + highlightSql(ev.query || '')).join('\n\n');
+      $('detailContent').innerHTML = sel.map(ev => { const err = ev.error ? `<span class="sql-com">-- LỖI: ${esc(ev.error)}</span>\n` : ''; return `<span class="sql-com">${esc(detailHeader(ev))}</span>\n` + err + highlightSql(ev.query || ''); }).join('\n\n');
     }
     $('copyDetail').addEventListener('click', () => { const t = $('detailContent').innerText; if (t) navigator.clipboard?.writeText(t); });
 
-    // ===== Modal =====
-    function openModal(ev) { $('modalTitle').textContent = `PID ${ev.pid} · ${ev.user}@${ev.database} · ${(ev.durationMs ?? 0).toFixed(2)} ms · ${fmtTime(ev.time)}`; $('modalContent').innerHTML = highlightSql(ev.query || ''); $('modal').style.display = 'flex'; }
+    function openModal(ev) {
+      $('modalTitle').textContent = `PID ${ev.pid} · ${ev.user}@${ev.database} · ${ev.error ? 'LỖI' : (ev.durationMs ?? 0).toFixed(2) + ' ms'} · ${fmtTime(ev.time)}`;
+      if (ev.error) { $('modalErr').style.display = 'block'; $('modalErr').textContent = 'LỖI: ' + ev.error; } else $('modalErr').style.display = 'none';
+      $('modalContent').innerHTML = highlightSql(ev.query || ''); $('modal').style.display = 'flex';
+    }
     function closeModal() { $('modal').style.display = 'none'; }
     $('modalClose').addEventListener('click', closeModal);
     $('modal').addEventListener('click', e => { if (e.target === $('modal')) closeModal(); });
 
-    // ===== Splitter kéo giữa grid & chi tiết =====
+    // ===== Splitter =====
     const SPLIT_KEY = 'pgmon_split';
     function restoreSplit() { const h = parseInt(localStorage.getItem(SPLIT_KEY)); if (h && h > 60) $('detailPanel').style.height = h + 'px'; }
-    (function wireSplitter() {
-      let drag = null;
+    (function () { let drag = null;
       $('splitter').addEventListener('mousedown', e => { e.preventDefault(); drag = { startY: e.clientY, startH: $('detailPanel').offsetHeight }; document.body.style.userSelect = 'none'; });
-      document.addEventListener('mousemove', e => {
-        if (!drag) return;
-        const contentH = $('livePanel').offsetHeight;
-        const h = Math.min(contentH - 120, Math.max(60, drag.startH - (e.clientY - drag.startY)));
-        $('detailPanel').style.height = h + 'px';
-      });
+      document.addEventListener('mousemove', e => { if (!drag) return; const contentH = $('livePanel').offsetHeight; const h = Math.min(contentH - 120, Math.max(60, drag.startH - (e.clientY - drag.startY))); $('detailPanel').style.height = h + 'px'; });
       document.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; localStorage.setItem(SPLIT_KEY, $('detailPanel').offsetHeight); } });
     })();
 
+    // ===== Lưu CSV =====
+    function csvCell(s) { s = (s ?? '').toString(); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+    function download(text, name) { const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); }
+    function stamp() { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+    $('saveCsv').addEventListener('click', () => {
+      const head = ['ThoiGian', 'PID', 'IP', 'TenMay', 'PhanMem', 'User', 'Database', 'DurationMs', 'Loi', 'Query'];
+      const lines = [head.join(',')];
+      for (const r of visibleRows) lines.push([fmtTime(r.time), r.pid, r.client, r.clientHost, r.application, r.user, r.database, (r.durationMs ?? 0).toFixed(2), r.error, r.query].map(csvCell).join(','));
+      download(lines.join('\n'), `pgmonitor_trace_${stamp()}.csv`);
+    });
+
     // ===== Tabs =====
     document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active')); tab.classList.add('active');
       const isLive = tab.dataset.tab === 'live';
-      $('livePanel').style.display = isLive ? 'flex' : 'none';
-      $('historyPanel').style.display = isLive ? 'none' : 'flex';
+      $('livePanel').style.display = isLive ? 'flex' : 'none'; $('historyPanel').style.display = isLive ? 'none' : 'flex';
       document.querySelectorAll('.live-only').forEach(el => el.style.display = isLive ? '' : 'none');
       if (!isLive) loadHistory();
     }));
 
     // ===== Lịch sử =====
+    let histItems = [];
     async function loadHistory() {
       const min = parseFloat($('hMinDur').value) || 0, limit = parseInt($('hLimit').value) || 50;
       try {
         const res = await fetch(`/api/history?minDuration=${min}&limit=${limit}`, { headers: { 'Authorization': 'Bearer ' + token } });
         if (!res.ok) { $('historyCount').textContent = 'Lỗi tải lịch sử (' + res.status + ')'; return; }
-        const items = await res.json();
-        $('historyBody').innerHTML = items.map(r => `<tr><td>${esc(r.pid)}</td><td>${esc(r.client)}</td><td>${esc(r.clientHost)}</td><td>${esc(r.application)}</td><td>${esc(r.userName)}</td><td>${esc(r.database)}</td><td>${esc(fmtDt(r.queryStart))}</td><td>${esc(fmtDt(r.queryEnd))}</td><td>${(r.durationSeconds ?? 0).toFixed(2)}</td><td class="query">${esc(r.queryText)}</td></tr>`).join('');
-        $('historyCount').textContent = `${items.length} bản ghi`;
+        histItems = await res.json();
+        $('historyBody').innerHTML = histItems.map(r => `<tr><td>${esc(r.pid)}</td><td>${esc(r.client)}</td><td>${esc(r.clientHost)}</td><td>${esc(r.application)}</td><td>${esc(r.userName)}</td><td>${esc(r.database)}</td><td>${esc(fmtDt(r.queryStart))}</td><td>${esc(fmtDt(r.queryEnd))}</td><td>${(r.durationSeconds ?? 0).toFixed(2)}</td><td class="query">${r.error ? '<span class="sql-com">LỖI: ' + esc(r.error) + '</span>\n' : ''}${esc(r.queryText)}</td></tr>`).join('');
+        $('historyCount').textContent = `${histItems.length} bản ghi`;
       } catch { $('historyCount').textContent = 'Không kết nối được máy chủ.'; }
     }
     function fmtDt(iso) { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString('vi-VN'); }
     $('reloadHistory').addEventListener('click', loadHistory);
-    $('historyBody').addEventListener('dblclick', e => { const tr = e.target.closest('tr'); if (!tr) return; $('modalTitle').textContent = 'Nội dung câu lệnh (lịch sử)'; $('modalContent').innerHTML = highlightSql(tr.querySelector('td.query')?.textContent || ''); $('modal').style.display = 'flex'; });
+    $('saveHistCsv').addEventListener('click', () => {
+      const head = ['PID', 'IP', 'TenMay', 'PhanMem', 'User', 'Database', 'BatDau', 'KetThuc', 'DurationS', 'Loi', 'Query'];
+      const lines = [head.join(',')];
+      for (const r of histItems) lines.push([r.pid, r.client, r.clientHost, r.application, r.userName, r.database, fmtDt(r.queryStart), fmtDt(r.queryEnd), (r.durationSeconds ?? 0).toFixed(2), r.error, r.queryText].map(csvCell).join(','));
+      download(lines.join('\n'), `pgmonitor_history_${stamp()}.csv`);
+    });
+    $('historyBody').addEventListener('dblclick', e => { const tr = e.target.closest('tr'); if (!tr) return; $('modalTitle').textContent = 'Nội dung câu lệnh (lịch sử)'; $('modalErr').style.display = 'none'; $('modalContent').innerHTML = highlightSql((tr.querySelector('td.query')?.textContent || '').replace(/^LỖI:.*\n/, '')); $('modal').style.display = 'flex'; });
   </script>
 </body>
 </html>

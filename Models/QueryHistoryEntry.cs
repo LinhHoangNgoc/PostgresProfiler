@@ -16,4 +16,5 @@ public class QueryHistoryEntry
     public DateTime QueryEnd { get; set; }
     public double DurationSeconds { get; set; }
     public string? QueryText { get; set; }
+    public string? Error { get; set; }
 }

@@ -16,12 +16,17 @@ public class ClientInfoService : BackgroundService
     public record PidInfo(string? Ip, string? Application);
 
     private readonly string _conn;
+    private readonly string? _machineNameSql;    // SQL tuỳ chọn: trả (ip, tên máy) từ bảng HIS
+    private readonly string _machineNameConn;    // DB chứa bảng tên máy (mặc định = _conn)
+    private int _tick;
     private readonly ILogger<ClientInfoService> _logger;
 
     // pid -> thông tin client; giữ cả pid đã đóng gần đây để trace kịp tra.
     private readonly ConcurrentDictionary<int, (PidInfo Info, DateTime Seen)> _byPid = new();
-    // ip -> tên máy (reverse-DNS), cache để tránh tra DNS liên tục.
+    // ip -> tên máy (reverse-DNS / NetBIOS), cache để tránh tra liên tục.
     private readonly ConcurrentDictionary<string, (string? Host, DateTime Ts)> _hostByIp = new();
+    // ip -> tên máy theo bảng HIS (ưu tiên hơn DNS/NetBIOS nếu có).
+    private readonly ConcurrentDictionary<string, string> _hisNameByIp = new();
 
     private static readonly TimeSpan PidTtl = TimeSpan.FromSeconds(120);
     private static readonly TimeSpan HostTtl = TimeSpan.FromMinutes(15);
@@ -31,14 +36,22 @@ public class ClientInfoService : BackgroundService
         _logger = logger;
         _conn = config.GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("Thiếu ConnectionStrings:Postgres");
+        _machineNameSql = config["Monitor:MachineNameSql"]; // vd: SELECT ipmaycon, tenmaycon FROM public.thoatmaycon
+        if (string.IsNullOrWhiteSpace(_machineNameSql)) _machineNameSql = null;
+        // DB chứa bảng tên máy (vd HIS6); nếu không cấu hình thì dùng chung connection.
+        _machineNameConn = config.GetConnectionString("MachineName") ?? _conn;
     }
 
     /// <summary>Lấy IP + application_name của một PID (null nếu chưa biết).</summary>
     public PidInfo? Get(int pid) => _byPid.TryGetValue(pid, out var v) ? v.Info : null;
 
-    /// <summary>Lấy tên máy đã reverse-DNS cho IP (null nếu chưa có/không phân giải được).</summary>
+    /// <summary>Tên máy cho IP: ưu tiên bảng HIS, sau đó tới reverse-DNS/NetBIOS.</summary>
     public string? HostFor(string? ip)
-        => ip != null && _hostByIp.TryGetValue(ip, out var v) ? v.Host : null;
+    {
+        if (ip == null) return null;
+        if (_hisNameByIp.TryGetValue(ip, out var his) && !string.IsNullOrWhiteSpace(his)) return his;
+        return _hostByIp.TryGetValue(ip, out var v) ? v.Host : null;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -76,6 +89,33 @@ public class ClientInfoService : BackgroundService
         // Dọn pid quá hạn.
         foreach (var kv in _byPid)
             if (now - kv.Value.Seen > PidTtl) _byPid.TryRemove(kv.Key, out _);
+
+        // Cập nhật tên máy theo bảng HIS mỗi ~30s (nếu có cấu hình).
+        if (_machineNameSql != null && _tick++ % 15 == 0)
+            await RefreshHisNamesAsync(ct);
+    }
+
+    /// <summary>Đọc bảng HIS (ip -> tên máy) để bổ sung tên máy con.</summary>
+    private async Task RefreshHisNamesAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var conn = new NpgsqlConnection(_machineNameConn);
+            await conn.OpenAsync(ct);
+            await using var cmd = new NpgsqlCommand(_machineNameSql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var ip = reader.IsDBNull(0) ? null : reader.GetValue(0)?.ToString()?.Trim();
+                var name = reader.IsDBNull(1) ? null : reader.GetValue(1)?.ToString()?.Trim();
+                if (!string.IsNullOrWhiteSpace(ip) && !string.IsNullOrWhiteSpace(name))
+                    _hisNameByIp[ip] = name;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Không đọc được bảng tên máy HIS (Monitor:MachineNameSql)");
+        }
     }
 
     /// <summary>
