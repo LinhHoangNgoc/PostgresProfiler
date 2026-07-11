@@ -10,6 +10,8 @@ public class QueryHistoryEntry
     public string? UserName { get; set; }
     public string? Database { get; set; }
     public string? Client { get; set; }
+    public string? ClientHost { get; set; }
+    public string? Application { get; set; }
     public DateTime? QueryStart { get; set; }
     public DateTime QueryEnd { get; set; }
     public double DurationSeconds { get; set; }

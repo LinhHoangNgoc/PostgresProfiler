@@ -187,6 +187,8 @@ public partial class PostgresLogTailService : BackgroundService
                 UserName = ev.User,
                 Database = ev.Database,
                 Client = ev.Client,
+                ClientHost = ev.ClientHost,
+                Application = ev.Application,
                 QueryStart = ts == default ? null : ts.UtcDateTime.AddMilliseconds(-ms),
                 QueryEnd = ts == default ? DateTime.UtcNow : ts.UtcDateTime,
                 DurationSeconds = ms / 1000.0,

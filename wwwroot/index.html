@@ -171,10 +171,10 @@
         <div class="tableWrap">
           <table id="historyTable">
             <colgroup>
-              <col style="width:60px"><col style="width:90px"><col style="width:100px"><col class="col-dt"><col class="col-dt"><col style="width:96px"><col>
+              <col style="width:56px"><col style="width:100px"><col style="width:100px"><col style="width:130px"><col style="width:84px"><col style="width:96px"><col class="col-dt"><col class="col-dt"><col style="width:92px"><col>
             </colgroup>
             <thead>
-              <tr><th>PID</th><th>User</th><th>Database</th><th>Bắt đầu</th><th>Kết thúc</th><th>Duration (s)</th><th>Query</th></tr>
+              <tr><th>PID</th><th>IP máy con</th><th>Tên máy</th><th>Phần mềm</th><th>User</th><th>Database</th><th>Bắt đầu</th><th>Kết thúc</th><th>Duration (s)</th><th>Query</th></tr>
             </thead>
             <tbody id="historyBody"></tbody>
           </table>
@@ -467,7 +467,7 @@
         const res = await fetch(`/api/history?minDuration=${min}&limit=${limit}`, { headers: { 'Authorization': 'Bearer ' + token } });
         if (!res.ok) { $('historyCount').textContent = 'Lỗi tải lịch sử (' + res.status + ')'; return; }
         const items = await res.json();
-        $('historyBody').innerHTML = items.map(r => `<tr><td>${esc(r.pid)}</td><td>${esc(r.userName)}</td><td>${esc(r.database)}</td><td>${esc(fmtDt(r.queryStart))}</td><td>${esc(fmtDt(r.queryEnd))}</td><td>${(r.durationSeconds ?? 0).toFixed(2)}</td><td class="query">${esc(r.queryText)}</td></tr>`).join('');
+        $('historyBody').innerHTML = items.map(r => `<tr><td>${esc(r.pid)}</td><td>${esc(r.client)}</td><td>${esc(r.clientHost)}</td><td>${esc(r.application)}</td><td>${esc(r.userName)}</td><td>${esc(r.database)}</td><td>${esc(fmtDt(r.queryStart))}</td><td>${esc(fmtDt(r.queryEnd))}</td><td>${(r.durationSeconds ?? 0).toFixed(2)}</td><td class="query">${esc(r.queryText)}</td></tr>`).join('');
         $('historyCount').textContent = `${items.length} bản ghi`;
       } catch { $('historyCount').textContent = 'Không kết nối được máy chủ.'; }
     }

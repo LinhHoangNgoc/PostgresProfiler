@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
+using System.Text.RegularExpressions;
 using Npgsql;
 
 namespace PgMonitorApi.Services;
@@ -76,26 +78,69 @@ public class ClientInfoService : BackgroundService
             if (now - kv.Value.Seen > PidTtl) _byPid.TryRemove(kv.Key, out _);
     }
 
-    /// <summary>Reverse-DNS IP -> tên máy (best-effort, có timeout, cache lại kể cả khi thất bại).</summary>
+    /// <summary>
+    /// Phân giải IP -> tên máy con (best-effort, cache lại kể cả khi thất bại):
+    /// 1) reverse-DNS; 2) nếu không ra thì NetBIOS qua nmblookup (mạng Windows LAN).
+    /// </summary>
     private async Task EnsureHostAsync(string ip)
     {
         if (_hostByIp.TryGetValue(ip, out var cached) && DateTime.UtcNow - cached.Ts < HostTtl)
             return;
 
-        string? host = null;
+        string? host = await ReverseDnsAsync(ip) ?? await NetBiosAsync(ip);
+        _hostByIp[ip] = (host, DateTime.UtcNow);
+    }
+
+    /// <summary>Reverse-DNS (thường trống trên LAN vì không có bản ghi PTR).</summary>
+    private static async Task<string?> ReverseDnsAsync(string ip)
+    {
         try
         {
             var lookup = Dns.GetHostEntryAsync(ip);
             if (await Task.WhenAny(lookup, Task.Delay(400)) == lookup)
             {
                 var name = lookup.Result.HostName;
-                // Bỏ nếu chỉ trả về lại IP; lấy phần tên ngắn (bỏ domain).
                 if (!string.IsNullOrWhiteSpace(name) && name != ip)
-                    host = name.Split('.')[0];
+                    return name.Split('.')[0];
             }
         }
-        catch { /* không phân giải được -> để null */ }
+        catch { }
+        return null;
+    }
 
-        _hostByIp[ip] = (host, DateTime.UtcNow);
+    // Bắt tên máy (unique <00>, không phải <GROUP>) từ output của nmblookup -A.
+    private static readonly Regex NmbNameRegex =
+        new(@"^\s*(\S+)\s+<00>\s+-\s+(?!<GROUP>)", RegexOptions.Multiline);
+
+    /// <summary>Tra tên máy Windows qua NetBIOS: nmblookup -A ip.</summary>
+    private async Task<string?> NetBiosAsync(string ip)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("nmblookup", $"-A {ip}")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            using var proc = Process.Start(psi);
+            if (proc == null) return null;
+
+            var outputTask = proc.StandardOutput.ReadToEndAsync();
+            if (await Task.WhenAny(outputTask, Task.Delay(1500)) != outputTask)
+            {
+                try { proc.Kill(true); } catch { }
+                return null;
+            }
+            var output = await outputTask;
+            var m = NmbNameRegex.Match(output);
+            return m.Success ? m.Groups[1].Value.Trim() : null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "nmblookup lỗi cho {Ip}", ip);
+            return null;
+        }
     }
 }
