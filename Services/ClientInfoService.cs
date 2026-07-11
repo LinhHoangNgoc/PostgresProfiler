@@ -18,6 +18,7 @@ public class ClientInfoService : BackgroundService
     private readonly string _conn;
     private readonly string? _machineNameSql;    // SQL tuỳ chọn: trả (ip, tên máy) từ bảng HIS
     private readonly string _machineNameConn;    // DB chứa bảng tên máy (mặc định = _conn)
+    private readonly string? _defaultApp;        // nhãn phần mềm khi client không khai báo application_name
     private int _tick;
     private readonly ILogger<ClientInfoService> _logger;
 
@@ -40,6 +41,9 @@ public class ClientInfoService : BackgroundService
         if (string.IsNullOrWhiteSpace(_machineNameSql)) _machineNameSql = null;
         // DB chứa bảng tên máy (vd HIS6); nếu không cấu hình thì dùng chung connection.
         _machineNameConn = config.GetConnectionString("MachineName") ?? _conn;
+        // Nhãn phần mềm mặc định cho kết nối không khai báo application_name.
+        _defaultApp = config["Monitor:DefaultApplication"];
+        if (string.IsNullOrWhiteSpace(_defaultApp)) _defaultApp = null;
     }
 
     /// <summary>Lấy IP + application_name của một PID (null nếu chưa biết).</summary>
@@ -82,7 +86,7 @@ public class ClientInfoService : BackgroundService
             int pid = reader.GetInt32(0);
             string? ip = reader.IsDBNull(1) ? null : reader.GetFieldValue<IPAddress>(1).ToString();
             string? app = reader.IsDBNull(2) ? null : reader.GetString(2);
-            if (string.IsNullOrWhiteSpace(app)) app = null;
+            if (string.IsNullOrWhiteSpace(app)) app = _defaultApp; // rỗng -> nhãn mặc định
             _byPid[pid] = (new PidInfo(ip, app), now);
             if (ip != null) _ = EnsureHostAsync(ip);
         }
