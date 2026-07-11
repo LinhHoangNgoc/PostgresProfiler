@@ -292,6 +292,8 @@
     $('loginBtn').addEventListener('click', login);
     $('password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
     $('logoutBtn').addEventListener('click', () => { localStorage.removeItem('pgmon_cred'); location.reload(); });
+    // Bỏ tạm dừng -> hiển thị ngay những gì đã gom trong lúc dừng.
+    $('pauseView').addEventListener('change', () => { if (!$('pauseView').checked) renderLive(); });
     (function autoLogin() {
       try { const raw = localStorage.getItem('pgmon_cred'); if (!raw) return;
         const c = JSON.parse(raw); $('username').value = c.username || ''; $('password').value = c.password || '';
@@ -304,10 +306,11 @@
     function startSignalR() {
       connection = new signalR.HubConnectionBuilder().withUrl('/hubs/monitor', { accessTokenFactory: () => token }).withAutomaticReconnect().build();
       connection.on('TraceEvents', evs => {
-        if ($('pauseView').checked || !evs || !evs.length) return;
+        if (!evs || !evs.length) return;
+        // Vẫn thu thập event khi tạm dừng; chỉ đóng băng hiển thị (không render).
         for (const e of evs) { e._id = ++seq; events.unshift(e); }
         if (events.length > MAX) events.length = MAX;
-        renderLive();
+        if (!$('pauseView').checked) renderLive();
       });
       connection.onreconnecting(() => setStatus('connecting', 'Đang kết nối lại...'));
       connection.onreconnected(() => setStatus('connected', 'Đã kết nối'));
